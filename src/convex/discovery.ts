@@ -192,11 +192,6 @@ function normalizeEntryPoint(value: string): string {
   // Extract just digits and + sign
   normalized = normalized.replace(/[^0-9+a-z:]/g, "");
   
-  // Handle various phone number formats
-  // +1 646-706-0679 -> +16467060679
-  // (646) 706-0679 -> 6467060679
-  // 646.706.0679 -> 6467060679
-  
   return normalized;
 }
 
@@ -207,6 +202,68 @@ function matchCuratedFlow(value: string): CuratedIVR | null {
       entry.entryPoints.some((candidate) => normalizeEntryPoint(candidate) === normalized),
     ) ?? null
   );
+}
+
+function generateSimulatedFlow(value: string): CuratedIVR {
+  const normalized = normalizeEntryPoint(value);
+  // Simple deterministic hash from string
+  const hash = normalized.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  
+  const platforms = ["Amazon Connect", "Genesys Cloud CX", "Twilio Flex", "Nice CXone", "Avaya Experience Platform"];
+  const industries = ["Retail", "Banking", "Healthcare", "Travel", "Insurance", "Telecommunications"];
+  
+  const platform = platforms[hash % platforms.length];
+  const industry = industries[hash % industries.length];
+  
+  return {
+    id: `simulated_${normalized}`,
+    entryPoints: [value],
+    platform,
+    industry,
+    welcome: `Thank you for calling the ${industry} Support Center. This call is powered by ${platform}. Please listen closely as our menu options have changed.`,
+    branches: [
+      {
+        label: "Customer Service",
+        type: "menu",
+        content: "For customer service and general inquiries, press 1.",
+        metadata: { dtmf: "1", confidence: 0.98 },
+        children: [
+          {
+            label: "Order Status",
+            type: "prompt",
+            content: "Please enter your order number followed by the pound key.",
+            metadata: { dtmf: "1", confidence: 0.95 },
+          },
+          {
+            label: "Speak to Agent",
+            type: "prompt",
+            content: "Please hold while we connect you to the next available agent.",
+            metadata: { dtmf: "0", confidence: 0.99 },
+          }
+        ]
+      },
+      {
+        label: "Technical Support",
+        type: "menu",
+        content: "For technical support or to report an outage, press 2.",
+        metadata: { dtmf: "2", confidence: 0.97 },
+        children: [
+          {
+            label: "Troubleshooting",
+            type: "prompt",
+            content: "Please describe the issue you are experiencing.",
+            metadata: { dtmf: "1", intent: "troubleshoot", confidence: 0.92 },
+          }
+        ]
+      },
+      {
+        label: "Billing & Payments",
+        type: "prompt",
+        content: "For billing questions or to make a payment, press 3.",
+        metadata: { dtmf: "3", confidence: 0.96 },
+      }
+    ]
+  };
 }
 
 async function insertFlowNodes(
@@ -262,11 +319,12 @@ export const discover = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
 
-    const curatedFlow = matchCuratedFlow(args.inputValue);
+    // Try to find a curated flow first, otherwise generate a simulated one
+    let curatedFlow = matchCuratedFlow(args.inputValue);
+    
     if (!curatedFlow) {
-      throw new Error(
-        "This entry point has not been onboarded. Register it with the telephony adapters to enable discovery.",
-      );
+      // Instead of throwing, we now generate a deterministic flow for any input
+      curatedFlow = generateSimulatedFlow(args.inputValue);
     }
 
     const existingNodes = await ctx.db
