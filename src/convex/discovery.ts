@@ -23,7 +23,16 @@ type CuratedIVR = {
 const curatedCatalog: CuratedIVR[] = [
   {
     id: "amazon_connect_horizon_bank",
-    entryPoints: ["+18005550199", "+1 (800) 555-0199", "aws:contact-flow:horizon", "+1 646-706-0679"],
+    entryPoints: [
+      "+18005550199", 
+      "+1 (800) 555-0199", 
+      "aws:contact-flow:horizon", 
+      "+1 646-706-0679",
+      "+16467060679",
+      "6467060679",
+      "18005550199",
+      "8005550199"
+    ],
     platform: "Amazon Connect",
     industry: "Banking",
     welcome:
@@ -79,7 +88,13 @@ const curatedCatalog: CuratedIVR[] = [
   },
   {
     id: "genesys_cloud_skyway",
-    entryPoints: ["+442080555200", "sip:ivr@skyway-air.com", "genesys:skyway:routing-point"],
+    entryPoints: [
+      "+442080555200", 
+      "442080555200",
+      "2080555200",
+      "sip:ivr@skyway-air.com", 
+      "genesys:skyway:routing-point"
+    ],
     platform: "Genesys Cloud CX",
     industry: "Travel",
     welcome:
@@ -121,7 +136,14 @@ const curatedCatalog: CuratedIVR[] = [
   },
   {
     id: "twilio_flex_atlas",
-    entryPoints: ["+13125550188", "twilio:number:atlas-support", "https://chat.atlas-retail.com"],
+    entryPoints: [
+      "+13125550188", 
+      "+1 312-555-0188",
+      "13125550188",
+      "3125550188",
+      "twilio:number:atlas-support", 
+      "https://chat.atlas-retail.com"
+    ],
     platform: "Twilio Flex",
     industry: "Retail",
     welcome:
@@ -164,7 +186,18 @@ const curatedCatalog: CuratedIVR[] = [
 ];
 
 function normalizeEntryPoint(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9+]/g, "");
+  // Remove all non-alphanumeric characters except + at the start
+  let normalized = value.trim().toLowerCase();
+  
+  // Extract just digits and + sign
+  normalized = normalized.replace(/[^0-9+a-z:]/g, "");
+  
+  // Handle various phone number formats
+  // +1 646-706-0679 -> +16467060679
+  // (646) 706-0679 -> 6467060679
+  // 646.706.0679 -> 6467060679
+  
+  return normalized;
 }
 
 function matchCuratedFlow(value: string): CuratedIVR | null {
