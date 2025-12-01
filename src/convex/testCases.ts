@@ -16,29 +16,43 @@ export const generateFromNodes = mutation({
     let count = 0;
     
     for (const node of nodes) {
-      // Skip if test already exists for this node (simplified check)
       const existing = await ctx.db
         .query("test_cases")
-        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-        .filter((q) => q.eq(q.field("targetNodeId"), node._id))
-        .first();
-        
-      if (!existing) {
-        await ctx.db.insert("test_cases", {
-          projectId: args.projectId,
-          title: `Verify ${node.label}`,
-          description: `Navigate to ${node.label} and verify prompt`,
-          steps: [
-            { action: "call", value: "+18005550199" },
-            { action: "listen", value: node.content },
-            { action: "dtmf", value: node.metadata?.dtmf || "0" }
-          ],
-          status: "draft",
-          targetNodeId: node._id,
-          tags: ["auto-generated", "smoke"],
-        });
-        count++;
+        .withIndex("by_project_and_target_node", (q) =>
+          q.eq("projectId", args.projectId).eq("targetNodeId", node._id),
+        )
+        .unique();
+
+      if (existing) continue;
+
+      const entryPoint =
+        typeof node.metadata?.entryPoint === "string"
+          ? (node.metadata.entryPoint as string)
+          : "+10000000000";
+
+      const steps: { action: string; value: string; expected?: string }[] = [
+        { action: "call", value: entryPoint },
+        { action: "listen", value: node.content },
+      ];
+
+      if (node.metadata?.dtmf) {
+        steps.push({ action: "dtmf", value: String(node.metadata.dtmf) });
       }
+
+      if (node.metadata?.intent) {
+        steps.push({ action: "speak", value: String(node.metadata.intent) });
+      }
+
+      await ctx.db.insert("test_cases", {
+        projectId: args.projectId,
+        title: `Verify ${node.label}`,
+        description: `Navigate to ${node.label} and verify prompt`,
+        steps,
+        status: "draft",
+        targetNodeId: node._id,
+        tags: ["auto-generated", "smoke"],
+      });
+      count++;
     }
 
     return { count };

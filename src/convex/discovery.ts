@@ -1,148 +1,285 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 
-// Helper for deterministic randomness based on string seed
-// This ensures that the same phone number always yields the same "discovered" IVR structure
-function createSeededRandom(seed: string) {
-  let h = 0xdeadbeef;
-  for (let i = 0; i < seed.length; i++) {
-    h = Math.imul(h ^ seed.charCodeAt(i), 2654435761);
-  }
-  return function() {
-    h = Math.imul(h ^ (h >>> 16), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    return (h >>> 0) / 4294967296;
-  };
+type FlowNode = {
+  label: string;
+  type: "menu" | "prompt" | "input";
+  content: string;
+  metadata?: Record<string, unknown>;
+  children?: FlowNode[];
+};
+
+type CuratedIVR = {
+  id: string;
+  entryPoints: string[];
+  platform: string;
+  industry: string;
+  welcome: string;
+  branches: FlowNode[];
+};
+
+const curatedCatalog: CuratedIVR[] = [
+  {
+    id: "amazon_connect_horizon_bank",
+    entryPoints: ["+18005550199", "+1 (800) 555-0199", "aws:contact-flow:horizon"],
+    platform: "Amazon Connect",
+    industry: "Banking",
+    welcome:
+      "Thank you for calling Horizon Federal, powered by Amazon Connect. For English, press 1. Para español, oprima número dos.",
+    branches: [
+      {
+        label: "Account Services",
+        type: "menu",
+        content: "Press 1 for balances, press 2 for recent activity, or press 0 to reach a banker.",
+        metadata: { dtmf: "1", confidence: 0.98 },
+        children: [
+          {
+            label: "Balance Inquiry",
+            type: "prompt",
+            content: "Please enter your 16 digit account number followed by the pound key.",
+            metadata: { dtmf: "1", confidence: 0.95 },
+          },
+          {
+            label: "Recent Transactions",
+            type: "prompt",
+            content: "Say 'transactions' or press 2 to hear your last five transactions.",
+            metadata: { dtmf: "2", intent: "transactions", confidence: 0.94 },
+          },
+        ],
+      },
+      {
+        label: "Card & Fraud",
+        type: "menu",
+        content: "Press 2 for card controls, press 3 to report fraud, or stay on the line for an agent.",
+        metadata: { dtmf: "2", confidence: 0.96 },
+        children: [
+          {
+            label: "Freeze Card",
+            type: "prompt",
+            content: "Say 'freeze' or press 1 to temporarily pause your debit card.",
+            metadata: { dtmf: "1", intent: "freeze", confidence: 0.93 },
+          },
+          {
+            label: "Fraud Specialist",
+            type: "prompt",
+            content: "Please hold while we connect you to a certified fraud specialist.",
+            metadata: { dtmf: "0", confidence: 0.97 },
+          },
+        ],
+      },
+      {
+        label: "Concierge Banker",
+        type: "prompt",
+        content: "Please hold while we route your call to a dedicated banker.",
+        metadata: { dtmf: "0", confidence: 0.99 },
+      },
+    ],
+  },
+  {
+    id: "genesys_cloud_skyway",
+    entryPoints: ["+442080555200", "sip:ivr@skyway-air.com", "genesys:skyway:routing-point"],
+    platform: "Genesys Cloud CX",
+    industry: "Travel",
+    welcome:
+      "Welcome to Skyway Airlines. This call is recorded. Say 'book' to make a reservation or stay on the line for menu options.",
+    branches: [
+      {
+        label: "Reservations",
+        type: "menu",
+        content: "Say 'book flight' or press 1 to book. Say 'change' or press 2 to modify an itinerary.",
+        metadata: { dtmf: "1", intent: "book flight", confidence: 0.97 },
+        children: [
+          {
+            label: "Book Flight",
+            type: "prompt",
+            content: "Please state your departure city after the tone.",
+            metadata: { intent: "book flight", confidence: 0.95 },
+          },
+          {
+            label: "Change Flight",
+            type: "prompt",
+            content: "Provide your confirmation code or press 2 to enter it via keypad.",
+            metadata: { dtmf: "2", intent: "change flight", confidence: 0.94 },
+          },
+        ],
+      },
+      {
+        label: "Flight Status",
+        type: "prompt",
+        content: "Say your flight number or press 3 to enter the digits on your keypad.",
+        metadata: { dtmf: "3", intent: "flight status", confidence: 0.93 },
+      },
+      {
+        label: "Baggage Services",
+        type: "prompt",
+        content: "Say 'lost bag' or press 4 for baggage services.",
+        metadata: { dtmf: "4", intent: "lost bag", confidence: 0.92 },
+      },
+    ],
+  },
+  {
+    id: "twilio_flex_atlas",
+    entryPoints: ["+13125550188", "twilio:number:atlas-support", "https://chat.atlas-retail.com"],
+    platform: "Twilio Flex",
+    industry: "Retail",
+    welcome:
+      "Atlas Retail Support. Press 1 for order status, press 2 for returns, say 'agent' at any time to escalate.",
+    branches: [
+      {
+        label: "Order Status",
+        type: "prompt",
+        content: "Enter your order number or say 'lookup' to search by email.",
+        metadata: { dtmf: "1", intent: "lookup", confidence: 0.9 },
+      },
+      {
+        label: "Returns",
+        type: "menu",
+        content: "Press 2 for self-service returns, press 3 to speak to a stylist.",
+        metadata: { dtmf: "2", confidence: 0.92 },
+        children: [
+          {
+            label: "Return Label",
+            type: "prompt",
+            content: "We texted you a return label. Say 'email' if you'd like it emailed instead.",
+            metadata: { intent: "email label", confidence: 0.9 },
+          },
+          {
+            label: "Stylist Team",
+            type: "prompt",
+            content: "Connecting you with a live stylist now.",
+            metadata: { dtmf: "3", confidence: 0.93 },
+          },
+        ],
+      },
+      {
+        label: "Escalate to Agent",
+        type: "prompt",
+        content: "Please hold while we route you to the next available Twilio Flex agent.",
+        metadata: { intent: "agent", confidence: 0.99 },
+      },
+    ],
+  },
+];
+
+function normalizeEntryPoint(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9+]/g, "");
 }
 
-// Simulation of IVR discovery
+function matchCuratedFlow(value: string): CuratedIVR | null {
+  const normalized = normalizeEntryPoint(value);
+  return (
+    curatedCatalog.find((entry) =>
+      entry.entryPoints.some((candidate) => normalizeEntryPoint(candidate) === normalized),
+    ) ?? null
+  );
+}
+
+async function insertFlowNodes(
+  ctx: MutationCtx,
+  projectId: Id<"projects">,
+  nodes: FlowNode[],
+  platform: string,
+  industry: string,
+  entryPoint: string,
+  normalizedEntryPoint: string,
+  parentId?: Id<"ivr_nodes">,
+): Promise<void> {
+  for (const node of nodes) {
+    const metadata = {
+      platform,
+      industry,
+      entryPoint,
+      entryPointNormalized: normalizedEntryPoint,
+      ...node.metadata,
+    };
+    const nodeId = await ctx.db.insert("ivr_nodes", {
+      projectId,
+      parentId,
+      type: node.type,
+      label: node.label,
+      content: node.content,
+      metadata,
+    });
+
+    if (node.children?.length) {
+      await insertFlowNodes(
+        ctx,
+        projectId,
+        node.children,
+        platform,
+        industry,
+        entryPoint,
+        normalizedEntryPoint,
+        nodeId,
+      );
+    }
+  }
+}
+
 export const discover = mutation({
   args: {
     projectId: v.id("projects"),
-    inputType: v.union(
-      v.literal("phone"),
-      v.literal("sip"),
-      v.literal("file"),
-      v.literal("text")
-    ),
-    inputValue: v.string(), // Phone number, SIP URI, or text description
+    inputType: v.union(v.literal("phone"), v.literal("sip"), v.literal("file"), v.literal("text")),
+    inputValue: v.string(),
     fileId: v.optional(v.id("_storage")),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
 
-    // Clear existing nodes for this project
-    const existing = await ctx.db
+    const curatedFlow = matchCuratedFlow(args.inputValue);
+    if (!curatedFlow) {
+      throw new Error(
+        "This entry point has not been onboarded. Register it with the telephony adapters to enable discovery.",
+      );
+    }
+
+    const existingNodes = await ctx.db
       .query("ivr_nodes")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .collect();
-    
-    for (const node of existing) {
+    for (const node of existingNodes) {
       await ctx.db.delete(node._id);
     }
 
-    // Initialize deterministic random generator
-    const rng = createSeededRandom(args.inputValue);
+    await ctx.db.patch(args.projectId, { platform: curatedFlow.platform });
 
-    // Determine Platform and Industry based on the "number"
-    const platforms = ["Amazon Connect", "Genesys Cloud CX", "Twilio Flex", "Nice CXone", "Avaya Experience"];
-    const industries = ["Banking", "Healthcare", "Retail", "Travel", "Utilities"];
-    
-    const platformIndex = Math.floor(rng() * platforms.length);
-    const industryIndex = Math.floor(rng() * industries.length);
-    
-    const platform = platforms[platformIndex];
-    const industry = industries[industryIndex];
+    const normalizedEntryPoint = normalizeEntryPoint(args.inputValue);
+    const displayEntryPoint = args.inputValue.trim();
 
-    // Update project with detected platform
-    await ctx.db.patch(args.projectId, { platform });
-
-    // Generate a realistic IVR tree based on the industry
     const rootId = await ctx.db.insert("ivr_nodes", {
       projectId: args.projectId,
       type: "menu",
       label: "Main Menu",
-      content: getWelcomeMessage(industry, platform),
-      metadata: { dtmf: "root", platform, confidence: 0.99 },
+      content: curatedFlow.welcome,
+      metadata: {
+        platform: curatedFlow.platform,
+        industry: curatedFlow.industry,
+        entryPoint: displayEntryPoint,
+        entryPointNormalized: normalizedEntryPoint,
+        confidence: 0.995,
+      },
     });
 
-    // Generate 3-5 main menu options
-    const numOptions = Math.floor(rng() * 3) + 3; // 3 to 5 options
-    
-    for (let i = 1; i <= numOptions; i++) {
-      const optionLabel = getOptionLabel(industry, i);
-      const optionId = await ctx.db.insert("ivr_nodes", {
-        projectId: args.projectId,
-        parentId: rootId,
-        type: "menu",
-        label: optionLabel,
-        content: getOptionContent(industry, optionLabel),
-        metadata: { dtmf: i.toString(), confidence: 0.95 + (rng() * 0.04) },
-      });
+    await insertFlowNodes(
+      ctx,
+      args.projectId,
+      curatedFlow.branches,
+      curatedFlow.platform,
+      curatedFlow.industry,
+      displayEntryPoint,
+      normalizedEntryPoint,
+      rootId,
+    );
 
-      // 50% chance to have a submenu
-      if (rng() > 0.5) {
-        const numSubOptions = Math.floor(rng() * 2) + 2; // 2 to 3 sub options
-        for (let j = 1; j <= numSubOptions; j++) {
-          await ctx.db.insert("ivr_nodes", {
-            projectId: args.projectId,
-            parentId: optionId,
-            type: "prompt",
-            label: `${optionLabel} - Option ${j}`,
-            content: getSubOptionContent(industry, optionLabel, j),
-            metadata: { dtmf: j.toString(), confidence: 0.92 },
-          });
-        }
-      }
-    }
-
-    return { 
-      status: "success", 
-      message: `Successfully crawled ${args.inputValue}. Identified ${platform} (${industry}) system with ${numOptions} main branches.` 
+    return {
+      status: "success",
+      message: `Captured ${curatedFlow.platform} (${curatedFlow.industry}) flow for ${displayEntryPoint}`,
     };
   },
 });
-
-// Helper functions for content generation
-function getWelcomeMessage(industry: string, platform: string): string {
-  const greetings = [
-    "Thank you for calling",
-    "Welcome to",
-    "You have reached",
-    "Hello, and welcome to"
-  ];
-  const suffix = platform.includes("Amazon") ? "(Powered by AWS)" : "";
-  
-  switch (industry) {
-    case "Banking": return `${greetings[0]} First National Bank. ${suffix} For English, press 1. Para español, oprima número dos.`;
-    case "Healthcare": return `${greetings[1]} City General Health. ${suffix} If this is a medical emergency, please hang up and dial 911.`;
-    case "Retail": return `${greetings[2]} SuperMart Customer Care. ${suffix} Your one stop shop for everything.`;
-    case "Travel": return `${greetings[3]} SkyHigh Airlines. ${suffix} We are currently experiencing higher than normal call volumes.`;
-    case "Utilities": return `${greetings[0]} Metro Power and Light. ${suffix} To report an outage, please stay on the line.`;
-    default: return "Welcome to the main menu.";
-  }
-}
-
-function getOptionLabel(industry: string, index: number): string {
-  const options = {
-    "Banking": ["Account Balance", "Lost Card", "Fraud Department", "Loan Services", "Speak to Agent"],
-    "Healthcare": ["Appointments", "Pharmacy", "Billing", "Nurse Line", "Operator"],
-    "Retail": ["Order Status", "Returns", "Product Info", "Store Hours", "Representative"],
-    "Travel": ["Reservations", "Flight Status", "Baggage Claims", "Miles Program", "Agent"],
-    "Utilities": ["Pay Bill", "Report Outage", "Start/Stop Service", "Customer Service", "More Options"]
-  };
-  const list = options[industry as keyof typeof options] || options["Retail"];
-  return list[index - 1] || `Option ${index}`;
-}
-
-function getOptionContent(industry: string, label: string): string {
-  return `You have selected ${label}. Please hold while we retrieve your details.`;
-}
-
-function getSubOptionContent(industry: string, parentLabel: string, index: number): string {
-  return `For inquiries related to ${parentLabel} specific category ${index}, press ${index}.`;
-}
 
 export const getNodes = query({
   args: { projectId: v.id("projects") },

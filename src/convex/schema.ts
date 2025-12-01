@@ -48,7 +48,9 @@ const schema = defineSchema(
       label: v.string(),
       content: v.string(), // text or transcript
       metadata: v.optional(v.any()),
-    }).index("by_project", ["projectId"]),
+    })
+      .index("by_project", ["projectId"])
+      .index("by_project_and_target_node", ["projectId", "targetNodeId"]),
 
     test_cases: defineTable({
       projectId: v.id("projects"),
