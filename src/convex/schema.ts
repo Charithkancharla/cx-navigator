@@ -38,6 +38,7 @@ const schema = defineSchema(
       type: v.string(), // voice, chat, etc
       status: v.string(),
       createdBy: v.string(),
+      platform: v.optional(v.string()), // Detected platform (e.g. Amazon Connect, Genesys)
     }).index("by_creator", ["createdBy"]),
 
     ivr_nodes: defineTable({
