@@ -23,7 +23,7 @@ type CuratedIVR = {
 const curatedCatalog: CuratedIVR[] = [
   {
     id: "amazon_connect_horizon_bank",
-    entryPoints: ["+18005550199", "+1 (800) 555-0199", "aws:contact-flow:horizon"],
+    entryPoints: ["+18005550199", "+1 (800) 555-0199", "aws:contact-flow:horizon", "+1 646-706-0679"],
     platform: "Amazon Connect",
     industry: "Banking",
     welcome:
