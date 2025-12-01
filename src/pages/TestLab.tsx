@@ -1,11 +1,12 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { Doc, Id } from "@/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
-import { CheckCircle2, FilePlus, Play, Sparkles } from "lucide-react";
+import { CheckCircle2, Eye, FilePlus, Play, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { useParams } from "react-router";
 import { toast } from "sonner";
@@ -16,6 +17,8 @@ export default function TestLab() {
   const generate = useMutation(api.testCases.generateFromNodes);
   const runTest = useMutation(api.execution.runTest);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [selectedTest, setSelectedTest] = useState<Doc<"test_cases"> | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   const handleGenerate = async () => {
     setIsGenerating(true);
@@ -29,13 +32,19 @@ export default function TestLab() {
     }
   };
 
-  const handleRun = async (testCaseId: Id<"test_cases">) => {
+  const handleRun = async (testCaseId: Id<"test_cases">, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent opening details when clicking run
     try {
       await runTest({ testCaseId });
       toast.success("Test execution started");
     } catch (error) {
       toast.error("Failed to start test");
     }
+  };
+
+  const openDetails = (test: any) => {
+    setSelectedTest(test);
+    setIsDetailOpen(true);
   };
 
   return (
@@ -75,7 +84,11 @@ export default function TestLab() {
             </TableHeader>
             <TableBody>
               {testCases?.map((test) => (
-                <TableRow key={test._id}>
+                <TableRow 
+                  key={test._id} 
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => openDetails(test)}
+                >
                   <TableCell className="font-medium">
                     {test.title}
                     <div className="text-xs text-muted-foreground">{test.description}</div>
@@ -96,7 +109,7 @@ export default function TestLab() {
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="ghost" onClick={() => handleRun(test._id)}>
+                    <Button size="sm" variant="ghost" onClick={(e) => handleRun(test._id, e)}>
                       <Play className="h-4 w-4 text-green-600" />
                     </Button>
                   </TableCell>
@@ -113,6 +126,49 @@ export default function TestLab() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{selectedTest?.title}</DialogTitle>
+            <DialogDescription>{selectedTest?.description}</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4">
+            <h4 className="text-sm font-medium mb-2">Test Steps</h4>
+            <div className="border rounded-md overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead className="w-[50px]">#</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead>Value / Prompt</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {selectedTest?.steps.map((step: any, index: number) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-mono text-xs text-muted-foreground">{index + 1}</TableCell>
+                      <TableCell className="font-medium capitalize">{step.action}</TableCell>
+                      <TableCell className="font-mono text-sm">{step.value}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setIsDetailOpen(false)}>Close</Button>
+            <Button onClick={() => {
+              if (selectedTest) {
+                handleRun(selectedTest._id, { stopPropagation: () => {} } as any);
+                setIsDetailOpen(false);
+              }
+            }}>
+              <Play className="mr-2 h-4 w-4" /> Run Test
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

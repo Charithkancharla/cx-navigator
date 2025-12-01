@@ -79,6 +79,14 @@ const schema = defineSchema(
       logs: v.array(v.string()),
       duration: v.number(),
       recordingUrl: v.optional(v.string()),
+      stepResults: v.optional(v.array(v.object({
+        stepIndex: v.number(),
+        action: v.string(),
+        expected: v.optional(v.string()),
+        actual: v.optional(v.string()),
+        status: v.string(), // pass, fail
+        timestamp: v.number()
+      })))
     }).index("by_run", ["runId"]),
   },
   {

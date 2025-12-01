@@ -12,24 +12,67 @@ export const runTest = mutation({
       projectId: testCase.projectId,
       status: "running",
       startTime: Date.now(),
-      summary: "Single test execution",
+      summary: `Execution of ${testCase.title}`,
     });
 
-    // Simulate execution (in a real app, this would be a scheduled job or external call)
-    // We'll just immediately mark it as done for the demo, but normally this is async
-    const passed = Math.random() > 0.2; // 80% pass rate simulation
+    // Simulate execution logic
+    const stepResults = [];
+    let overallStatus = "pass";
+    const logs = ["Initializing test agent...", `Dialing ${testCase.steps.find(s => s.action === 'call')?.value || 'target'}...`];
+    
+    // Artificial delay for realism
+    const startTime = Date.now();
+
+    for (const [index, step] of testCase.steps.entries()) {
+      const stepResult: any = {
+        stepIndex: index,
+        action: step.action,
+        timestamp: Date.now() + (index * 1000),
+        status: "pass"
+      };
+
+      if (step.action === "listen") {
+        stepResult.expected = step.value;
+        
+        // 80% chance to match exactly, 20% chance to have a mismatch or noise
+        const isSuccess = Math.random() > 0.2;
+        
+        if (isSuccess) {
+          stepResult.actual = step.value;
+          logs.push(`Step ${index + 1}: Verified prompt matches expected.`);
+        } else {
+          // Simulate a slight mismatch
+          stepResult.actual = step.value + " [unexpected noise]";
+          stepResult.status = "fail";
+          overallStatus = "fail";
+          logs.push(`Step ${index + 1}: Mismatch! Expected "${step.value}" but heard "${stepResult.actual}"`);
+        }
+      } else if (step.action === "dtmf") {
+        stepResult.expected = step.value;
+        stepResult.actual = step.value; // DTMF usually succeeds in simulation
+        logs.push(`Step ${index + 1}: Sent DTMF ${step.value}`);
+      } else {
+        logs.push(`Step ${index + 1}: Performed ${step.action}`);
+      }
+
+      stepResults.push(stepResult);
+    }
+
+    logs.push(`Test finished with status: ${overallStatus.toUpperCase()}`);
 
     await ctx.db.insert("test_results", {
       runId,
       testCaseId: args.testCaseId,
-      status: passed ? "pass" : "fail",
-      logs: ["Dialing...", "Connected", "Listening for prompt...", passed ? "Match found" : "Mismatch detected"],
-      duration: 1500 + Math.random() * 2000,
+      status: overallStatus,
+      logs: logs,
+      duration: Date.now() - startTime + 1500, // Add some base latency
+      stepResults: stepResults,
     });
 
     await ctx.db.patch(runId, {
       status: "completed",
       endTime: Date.now(),
+      summary: overallStatus === "pass" ? "All steps passed" : "Steps failed during execution"
     });
 
     return runId;

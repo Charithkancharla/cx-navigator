@@ -4,9 +4,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useQuery } from "convex/react";
-import { CheckCircle2, Clock, XCircle } from "lucide-react";
+import { CheckCircle2, Clock, XCircle, ChevronRight, ChevronDown, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { useParams } from "react-router";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 export default function Execution() {
   const { projectId } = useParams();
@@ -31,7 +32,11 @@ export default function Execution() {
                 >
                   <div className="mt-1">
                     {run.status === 'completed' ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      run.summary?.includes("failed") ? (
+                         <XCircle className="h-4 w-4 text-red-500" />
+                      ) : (
+                         <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      )
                     ) : (
                       <Clock className="h-4 w-4 text-blue-500 animate-pulse" />
                     )}
@@ -41,7 +46,7 @@ export default function Execution() {
                     <div className="text-xs text-muted-foreground">
                       {new Date(run.startTime).toLocaleString()}
                     </div>
-                    <div className="text-xs text-muted-foreground">{run.summary}</div>
+                    <div className="text-xs text-muted-foreground line-clamp-1">{run.summary}</div>
                   </div>
                 </button>
               ))}
@@ -98,7 +103,47 @@ function RunDetails({ runId }: { runId: Id<"test_runs"> }) {
               </Badge>
             </div>
             
-            <div className="bg-muted/50 rounded p-3 font-mono text-xs space-y-1">
+            {/* Step Results Visualization */}
+            {result.stepResults && result.stepResults.length > 0 && (
+              <div className="space-y-2 mt-4">
+                <h4 className="text-sm font-medium text-muted-foreground">Step Execution</h4>
+                <div className="border rounded-md divide-y">
+                  {result.stepResults.map((step, idx) => (
+                    <div key={idx} className="p-3 text-sm">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-muted-foreground">#{idx + 1}</span>
+                          <span className="font-medium capitalize">{step.action}</span>
+                        </div>
+                        <Badge variant={step.status === 'pass' ? 'secondary' : 'destructive'} className="text-[10px] h-5">
+                          {step.status}
+                        </Badge>
+                      </div>
+                      
+                      {step.action === 'listen' && (
+                        <div className="mt-2 grid grid-cols-2 gap-4 bg-muted/30 p-2 rounded">
+                          <div>
+                            <div className="text-xs text-muted-foreground mb-1">Expected Prompt</div>
+                            <div className="text-xs font-mono text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30 p-1 rounded">
+                              {step.expected || "-"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground mb-1">Actual Heard</div>
+                            <div className={`text-xs font-mono p-1 rounded ${step.status === 'pass' ? 'text-muted-foreground' : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30'}`}>
+                              {step.actual || "-"}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-muted/50 rounded p-3 font-mono text-xs space-y-1 mt-4">
+              <div className="font-semibold text-muted-foreground mb-2">System Logs</div>
               {result.logs.map((log, i) => (
                 <div key={i} className="flex gap-2">
                   <span className="text-muted-foreground">[{i + 1}]</span>
