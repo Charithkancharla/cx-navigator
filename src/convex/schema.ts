@@ -32,12 +32,54 @@ const schema = defineSchema(
       role: v.optional(roleValidator), // role of the user. do not remove
     }).index("email", ["email"]), // index for the email. do not remove or modify
 
-    // add other tables here
+    projects: defineTable({
+      name: v.string(),
+      description: v.optional(v.string()),
+      type: v.string(), // voice, chat, etc
+      status: v.string(),
+      createdBy: v.string(),
+    }).index("by_creator", ["createdBy"]),
 
-    // tableName: defineTable({
-    //   ...
-    //   // table fields
-    // }).index("by_field", ["field"])
+    ivr_nodes: defineTable({
+      projectId: v.id("projects"),
+      parentId: v.optional(v.id("ivr_nodes")),
+      type: v.string(), // menu, prompt, input
+      label: v.string(),
+      content: v.string(), // text or transcript
+      metadata: v.optional(v.any()),
+    }).index("by_project", ["projectId"]),
+
+    test_cases: defineTable({
+      projectId: v.id("projects"),
+      targetNodeId: v.optional(v.id("ivr_nodes")),
+      title: v.string(),
+      description: v.optional(v.string()),
+      steps: v.array(v.object({
+        action: v.string(),
+        value: v.string(),
+        expected: v.optional(v.string())
+      })),
+      status: v.string(), // draft, approved, disabled
+      tags: v.array(v.string()),
+    }).index("by_project", ["projectId"]),
+
+    test_runs: defineTable({
+      projectId: v.id("projects"),
+      campaignId: v.optional(v.string()),
+      status: v.string(), // running, completed
+      startTime: v.number(),
+      endTime: v.optional(v.number()),
+      summary: v.optional(v.string()),
+    }).index("by_project", ["projectId"]),
+
+    test_results: defineTable({
+      runId: v.id("test_runs"),
+      testCaseId: v.id("test_cases"),
+      status: v.string(), // pass, fail
+      logs: v.array(v.string()),
+      duration: v.number(),
+      recordingUrl: v.optional(v.string()),
+    }).index("by_run", ["runId"]),
   },
   {
     schemaValidation: false,
