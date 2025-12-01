@@ -49,8 +49,7 @@ const schema = defineSchema(
       content: v.string(), // text or transcript
       metadata: v.optional(v.any()),
     })
-      .index("by_project", ["projectId"])
-      .index("by_project_and_target_node", ["projectId", "targetNodeId"]),
+      .index("by_project", ["projectId"]),
 
     test_cases: defineTable({
       projectId: v.id("projects"),
@@ -64,7 +63,9 @@ const schema = defineSchema(
       })),
       status: v.string(), // draft, approved, disabled
       tags: v.array(v.string()),
-    }).index("by_project", ["projectId"]),
+    })
+      .index("by_project", ["projectId"])
+      .index("by_project_and_target_node", ["projectId", "targetNodeId"]),
 
     test_runs: defineTable({
       projectId: v.id("projects"),

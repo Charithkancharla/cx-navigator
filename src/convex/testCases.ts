@@ -19,7 +19,7 @@ export const generateFromNodes = mutation({
       const existing = await ctx.db
         .query("test_cases")
         .withIndex("by_project_and_target_node", (q) =>
-          q.eq("projectId", args.projectId).eq("targetNodeId", node._id),
+          q.eq("projectId", args.projectId).eq("targetNodeId", node._id)
         )
         .unique();
 
