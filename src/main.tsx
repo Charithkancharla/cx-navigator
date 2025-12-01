@@ -10,6 +10,10 @@ import { BrowserRouter, Route, Routes, useLocation } from "react-router";
 import "./index.css";
 import Landing from "./pages/Landing.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
+import ProjectView from "./pages/ProjectView.tsx";
+import Discovery from "./pages/Discovery.tsx";
+import TestLab from "./pages/TestLab.tsx";
+import Execution from "./pages/Execution.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import "./types/global.d.ts";
 
@@ -49,7 +53,16 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/" element={<Landing />} />
             <Route path="/auth" element={<AuthPage redirectAfterAuth="/dashboard" />} />
             <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/project/:projectId/*" element={<Dashboard />} />
+            
+            {/* Project Routes */}
+            <Route path="/project/:projectId" element={<ProjectView />}>
+              <Route index element={<div className="p-4 text-muted-foreground">Select a module from the sidebar to begin.</div>} />
+              <Route path="discovery" element={<Discovery />} />
+              <Route path="test-lab" element={<TestLab />} />
+              <Route path="execution" element={<Execution />} />
+              <Route path="settings" element={<div className="p-4">Settings placeholder</div>} />
+            </Route>
+
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
