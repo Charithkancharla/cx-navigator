@@ -255,3 +255,81 @@ When using convex, make sure:
 - This includes importing generated files like `@/convex/_generated/server`, `@/convex/_generated/api`
 - Remember to import functions like useQuery, useMutation, useAction, etc. from `convex/react`
 - NEVER have return type validators.
+
+## IVR Crawl / Discovery Backend Architecture
+
+### Goal
+Design a reliable, scalable, and observable backend that can connect to any IVR entry point (phone number, SIP URI, Amazon Connect contact flow ID, Dialogflow CX endpoint, Genesys routing point, Twilio number), traverse the real IVR flow, interpret prompts (ASR/DTMF/NLU), detect loops/timeouts/unreachable nodes, and emit a versioned IVR flow model suitable for downstream testing and regression analysis.
+
+### Functional Components
+
+1. **API Gateway / Ingress**
+   - Exposes two protected REST endpoints:
+     - `POST /discovery-jobs`: `{ entry_point, auth_context, discoveryOptions }`
+     - `GET /discovery-jobs/{jobId}`: returns job status, runtime metrics, and flow artifact references.
+   - Provides JWT/OAuth validation, rate limiting, and request logging before forwarding to internal services.
+
+2. **Job Orchestrator**
+   - Validates payloads, enforces RBAC, and checks per-tenant quotas (max concurrent jobs, priority tiers).
+   - Persists metadata to a relational store (e.g., Postgres) and issues monotonic job IDs.
+   - Pushes work items onto the Task Queue while maintaining job lifecycle state (`queued → running → completed/failed`).
+
+3. **Task Queue**
+   - Durable queue (Kafka/RabbitMQ/SQS) partitioned by tenant and priority.
+   - Guarantees at-least-once delivery to Crawl Workers, supports retry with exponential back-off, and emits dead-letter events for manual review.
+
+4. **Call Orchestrator / Telephony Adapter Layer**
+   - Abstract interface: `dial()`, `sendDtmf()`, `speak()`, `hangup()`, `getStream()`.
+   - Pluggable adapters for PSTN/SIP trunks, Twilio Programmable Voice, Amazon Connect, Dialogflow CX, and Genesys Cloud routing points.
+   - Handles session metadata (call SID, latency, cost) and funnels raw audio/DTMF streams to the Crawl Engine.
+
+5. **Crawl Engine / State Machine**
+   - Stateful worker that consumes queue jobs, spins up one or more call sessions via the adapter layer, and orchestrates traversal.
+   - Responsibilities:
+     - Streaming ASR + DTMF ingestion.
+     - Prompt segmentation, option extraction, and intent detection.
+     - Exploration strategies (BFS/DFS/max-depth/pruning) with loop detection and timeout handling.
+     - Concurrency control to explore multiple branches in parallel.
+     - Emits structured events (`prompt_detected`, `transition_taken`, `loop_detected`, etc.) for logging and modeling.
+
+6. **Audio Processing & NLU Pipeline**
+   - Real-time ASR service (primary + fallback vendor) delivering transcripts with timestamps and confidence.
+   - DTMF tone analyzer and silence detector.
+   - Optional lightweight NLU layer to map utterances ("billing", "agent") to intents for speech-driven flows.
+   - PII scrubbing layer to redact sensitive tokens before persistence.
+
+7. **Flow Builder / Modeler**
+   - Consumes crawl events to construct a graph-like representation:
+     - Nodes: `{ nodeId, promptId, transcript, audioHash, audioUrl, latency, confidence }`
+     - Edges: `{ fromNode, toNode, triggerType (DTMF|intent|timeout), triggerValue, metadata }`
+   - Performs deduplication via transcript similarity + audio hashing, merges nodes across re-runs, and annotates anomalies (loops, unreachable paths).
+   - Produces versioned artifacts and diffs against previous discoveries for regression tracking.
+
+8. **Storage Layer**
+   - **Graph/Document DB** (Neo4j/Neptune/JSON+edges) for IVR flow snapshots and relationships.
+   - **Relational DB** for job metadata, audit entries, user permissions, and policy enforcement.
+   - **Object Storage (S3 compatible)** for raw audio snippets, call recordings, ASR artifacts, and generated flow JSON exports.
+   - Versioning strategy: each discovery run writes a snapshot plus diff metadata referencing prior versions.
+
+9. **State / Cache**
+   - Redis (or similar) cluster storing per-job crawl state, visited-node fingerprints, rate-limit tokens, and distributed locks for shared resources.
+
+10. **Monitoring, Logging & Tracing**
+    - Centralized logs (ELK/OpenSearch) with per-job correlation IDs capturing adapter events, ASR transcripts, and crawler decisions.
+    - Metrics in Prometheus/Grafana: call latency, path coverage %, ASR accuracy, adapter error rates, queue depth.
+    - Distributed tracing (Jaeger) linking API request → orchestrator → worker → adapter calls, enabling drill-down on problematic branches.
+
+11. **Security & Governance**
+    - JWT/OAuth auth at the gateway; RBAC enforced in the orchestrator and data layer.
+    - TLS everywhere and envelope encryption for audio/transcripts at rest.
+    - Configurable redaction pipeline for sensitive transcripts plus audit logs of every call session, action, and data export.
+
+12. **Failure Handling & Retries**
+    - Per-adapter retry policies, jittered back-offs, and circuit breakers for flaky telephony providers.
+    - Job-level timeouts with graceful cancellation, emitting partial flow artifacts when possible.
+    - Dead-letter processing plus alerting for repeated failures or suspected misconfigurations.
+
+### Data Contracts (High-Level)
+
+- **Discovery Job Record (Postgres)**
+  
