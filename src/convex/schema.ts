@@ -45,6 +45,7 @@ const schema = defineSchema(
       projectId: v.id("projects"),
       status: v.string(), // queued, running, completed, failed
       entryPoint: v.string(),
+      inputType: v.optional(v.string()), // Added inputType field
       platform: v.optional(v.string()),
       startTime: v.number(),
       endTime: v.optional(v.number()),

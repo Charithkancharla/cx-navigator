@@ -267,12 +267,50 @@ function generateSimulatedFlow(value: string): CuratedIVR {
   };
 }
 
+function parseTranscriptFlow(text: string): CuratedIVR {
+  const branches: FlowNode[] = [];
+  
+  // Look for "Press [digit] for [Label]" patterns (simple regex)
+  // e.g. "Press 1 for Sales"
+  const pressMatches = text.matchAll(/Press (\d) for ([^.,;]+)/gi);
+  for (const match of pressMatches) {
+    branches.push({
+      label: match[2].trim(),
+      type: "prompt",
+      content: `(Simulated) You selected ${match[2].trim()}.`,
+      metadata: { dtmf: match[1], confidence: 1.0 }
+    });
+  }
+
+  // Look for "Say [word] for [Label]" patterns
+  // e.g. "Say 'sales' for Sales"
+  const sayMatches = text.matchAll(/Say ['"]?(\w+)['"]? for ([^.,;]+)/gi);
+  for (const match of sayMatches) {
+     branches.push({
+      label: match[2].trim(),
+      type: "prompt",
+      content: `(Simulated) You said ${match[1]}.`,
+      metadata: { intent: match[1].toLowerCase(), confidence: 1.0 }
+    });
+  }
+
+  return {
+    id: "transcript_flow",
+    entryPoints: [],
+    platform: "Text Transcript",
+    industry: "Unknown",
+    welcome: text,
+    branches: branches
+  };
+}
+
 // --- Internal Mutations for Action --- //
 
 export const createJob = mutation({
   args: {
     projectId: v.id("projects"),
     entryPoint: v.string(),
+    inputType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Clear existing nodes for a fresh discovery
@@ -287,6 +325,7 @@ export const createJob = mutation({
     return await ctx.db.insert("discovery_jobs", {
       projectId: args.projectId,
       entryPoint: args.entryPoint,
+      inputType: args.inputType,
       status: "queued",
       startTime: Date.now(),
     });
@@ -356,42 +395,59 @@ export const runDiscovery = action({
     jobId: v.id("discovery_jobs"),
     projectId: v.id("projects"),
     entryPoint: v.string(),
+    inputType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { jobId, projectId, entryPoint } = args;
+    const { jobId, projectId, entryPoint, inputType } = args;
 
     const log = async (msg: string, type: string = "info") => {
       await ctx.runMutation(internal.discovery.writeLog, { jobId, message: msg, type });
     };
 
     try {
-      await log(`Initializing discovery agent for target: ${entryPoint}`);
+      await log(`Initializing discovery agent for target: ${entryPoint.substring(0, 20)}${entryPoint.length > 20 ? '...' : ''}`);
       await new Promise(r => setTimeout(r, 800));
 
-      await log("Allocating SIP trunk from pool (us-east-1)...");
-      await new Promise(r => setTimeout(r, 1000));
+      let flow: CuratedIVR | null = null;
 
-      await log(`Dialing ${entryPoint}...`);
-      await new Promise(r => setTimeout(r, 1500));
-
-      await log("Connection established. SIP 200 OK.");
-      await log("Analyzing RTP stream for audio fingerprinting...");
-      await new Promise(r => setTimeout(r, 1200));
-
-      // Determine the flow to "discover"
-      let flow = matchCuratedFlow(entryPoint);
-      if (!flow) {
-        await log("No cached fingerprint found. Initiating dynamic traversal.");
-        flow = generateSimulatedFlow(entryPoint);
+      if (inputType === "text") {
+        await log("Input type is Text Transcript. Skipping telephony initialization.");
+        await new Promise(r => setTimeout(r, 500));
+        await log("Parsing transcript structure...");
+        await new Promise(r => setTimeout(r, 1000));
+        
+        flow = parseTranscriptFlow(entryPoint);
+        await log(`Parsed ${flow.branches.length} potential branches from text.`);
       } else {
-        await log(`Matched known IVR signature: ${flow.id}`);
+        await log("Allocating SIP trunk from pool (us-east-1)...");
+        await new Promise(r => setTimeout(r, 1000));
+
+        await log(`Dialing ${entryPoint}...`);
+        await new Promise(r => setTimeout(r, 1500));
+
+        await log("Connection established. SIP 200 OK.");
+        await log("Analyzing RTP stream for audio fingerprinting...");
+        await new Promise(r => setTimeout(r, 1200));
+
+        // Determine the flow to "discover"
+        flow = matchCuratedFlow(entryPoint);
+        if (!flow) {
+          await log("No cached fingerprint found. Initiating dynamic traversal.");
+          flow = generateSimulatedFlow(entryPoint);
+        } else {
+          await log(`Matched known IVR signature: ${flow.id}`);
+        }
       }
+
+      if (!flow) throw new Error("Failed to generate flow");
 
       await log(`Detected Platform: ${flow.platform} (${flow.industry})`);
       await new Promise(r => setTimeout(r, 800));
 
-      await log("Voice Activity Detected. Transcribing welcome prompt...");
-      await new Promise(r => setTimeout(r, 1000));
+      if (inputType !== "text") {
+        await log("Voice Activity Detected. Transcribing welcome prompt...");
+        await new Promise(r => setTimeout(r, 1000));
+      }
 
       // Insert Root Node
       const rootId = await ctx.runMutation(internal.discovery.insertNode, {
@@ -402,7 +458,7 @@ export const runDiscovery = action({
         metadata: {
           platform: flow.platform,
           industry: flow.industry,
-          entryPoint,
+          entryPoint: inputType === "text" ? "Transcript" : entryPoint,
           confidence: 0.99,
         },
       });
@@ -433,7 +489,9 @@ export const runDiscovery = action({
       await crawlBranches(flow.branches, rootId);
 
       await log("Traversal complete. All reachable nodes mapped.");
-      await log("Disconnecting session.");
+      if (inputType !== "text") {
+        await log("Disconnecting session.");
+      }
 
       await ctx.runMutation(internal.discovery.completeJob, {
         jobId,

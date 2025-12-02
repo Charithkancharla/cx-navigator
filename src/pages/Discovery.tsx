@@ -47,6 +47,7 @@ export default function Discovery() {
       const jobId = await createJob({
         projectId: projectId as Id<"projects">,
         entryPoint: inputVal,
+        inputType: inputType,
       });
       setCurrentJobId(jobId);
 
@@ -59,6 +60,7 @@ export default function Discovery() {
         jobId,
         projectId: projectId as Id<"projects">,
         entryPoint: inputVal,
+        inputType: inputType,
       });
       
       toast.success("Discovery completed successfully");
