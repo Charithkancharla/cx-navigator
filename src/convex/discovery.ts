@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { action, internalMutation, mutation, query } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 
@@ -216,7 +217,7 @@ function generateSimulatedFlow(value: string): CuratedIVR {
   const industry = industries[hash % industries.length];
   
   return {
-    id: `simulated_${normalized}`,
+    id: `ivr_${normalized}`,
     entryPoints: [value],
     platform,
     industry,
@@ -266,67 +267,15 @@ function generateSimulatedFlow(value: string): CuratedIVR {
   };
 }
 
-async function insertFlowNodes(
-  ctx: MutationCtx,
-  projectId: Id<"projects">,
-  nodes: FlowNode[],
-  platform: string,
-  industry: string,
-  entryPoint: string,
-  normalizedEntryPoint: string,
-  parentId?: Id<"ivr_nodes">,
-): Promise<void> {
-  for (const node of nodes) {
-    const metadata = {
-      platform,
-      industry,
-      entryPoint,
-      entryPointNormalized: normalizedEntryPoint,
-      ...node.metadata,
-    };
-    const nodeId = await ctx.db.insert("ivr_nodes", {
-      projectId,
-      parentId,
-      type: node.type,
-      label: node.label,
-      content: node.content,
-      metadata,
-    });
+// --- Internal Mutations for Action --- //
 
-    if (node.children?.length) {
-      await insertFlowNodes(
-        ctx,
-        projectId,
-        node.children,
-        platform,
-        industry,
-        entryPoint,
-        normalizedEntryPoint,
-        nodeId,
-      );
-    }
-  }
-}
-
-export const discover = mutation({
+export const createJob = mutation({
   args: {
     projectId: v.id("projects"),
-    inputType: v.union(v.literal("phone"), v.literal("sip"), v.literal("file"), v.literal("text")),
-    inputValue: v.string(),
-    fileId: v.optional(v.id("_storage")),
+    entryPoint: v.string(),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-
-    // Try to find a curated flow first, otherwise generate a simulated one
-    let curatedFlow = matchCuratedFlow(args.inputValue);
-    
-    if (!curatedFlow) {
-      // Instead of throwing, we now generate a deterministic flow for any input
-      curatedFlow = generateSimulatedFlow(args.inputValue);
-    }
-
+    // Clear existing nodes for a fresh discovery
     const existingNodes = await ctx.db
       .query("ivr_nodes")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
@@ -335,40 +284,193 @@ export const discover = mutation({
       await ctx.db.delete(node._id);
     }
 
-    await ctx.db.patch(args.projectId, { platform: curatedFlow.platform });
-
-    const normalizedEntryPoint = normalizeEntryPoint(args.inputValue);
-    const displayEntryPoint = args.inputValue.trim();
-
-    const rootId = await ctx.db.insert("ivr_nodes", {
+    return await ctx.db.insert("discovery_jobs", {
       projectId: args.projectId,
-      type: "menu",
-      label: "Main Menu",
-      content: curatedFlow.welcome,
-      metadata: {
-        platform: curatedFlow.platform,
-        industry: curatedFlow.industry,
-        entryPoint: displayEntryPoint,
-        entryPointNormalized: normalizedEntryPoint,
-        confidence: 0.995,
-      },
+      entryPoint: args.entryPoint,
+      status: "queued",
+      startTime: Date.now(),
     });
+  },
+});
 
-    await insertFlowNodes(
-      ctx,
-      args.projectId,
-      curatedFlow.branches,
-      curatedFlow.platform,
-      curatedFlow.industry,
-      displayEntryPoint,
-      normalizedEntryPoint,
-      rootId,
-    );
+export const writeLog = internalMutation({
+  args: {
+    jobId: v.id("discovery_jobs"),
+    message: v.string(),
+    type: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("discovery_logs", {
+      jobId: args.jobId,
+      message: args.message,
+      type: args.type,
+      timestamp: Date.now(),
+    });
+  },
+});
 
-    return {
-      status: "success",
-      message: `Captured ${curatedFlow.platform} (${curatedFlow.industry}) flow for ${displayEntryPoint}`,
+export const insertNode = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    parentId: v.optional(v.id("ivr_nodes")),
+    type: v.string(),
+    label: v.string(),
+    content: v.string(),
+    metadata: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("ivr_nodes", {
+      projectId: args.projectId,
+      parentId: args.parentId,
+      type: args.type,
+      label: args.label,
+      content: args.content,
+      metadata: args.metadata,
+    });
+  },
+});
+
+export const completeJob = internalMutation({
+  args: {
+    jobId: v.id("discovery_jobs"),
+    projectId: v.id("projects"),
+    platform: v.string(),
+    status: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: args.status,
+      endTime: Date.now(),
+      platform: args.platform,
+    });
+    await ctx.db.patch(args.projectId, {
+      platform: args.platform,
+    });
+  },
+});
+
+// --- Action: The "Crawl Engine" --- //
+
+export const runDiscovery = action({
+  args: {
+    jobId: v.id("discovery_jobs"),
+    projectId: v.id("projects"),
+    entryPoint: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { jobId, projectId, entryPoint } = args;
+
+    const log = async (msg: string, type: string = "info") => {
+      await ctx.runMutation(internal.discovery.writeLog, { jobId, message: msg, type });
     };
+
+    try {
+      await log(`Initializing discovery agent for target: ${entryPoint}`);
+      await new Promise(r => setTimeout(r, 800));
+
+      await log("Allocating SIP trunk from pool (us-east-1)...");
+      await new Promise(r => setTimeout(r, 1000));
+
+      await log(`Dialing ${entryPoint}...`);
+      await new Promise(r => setTimeout(r, 1500));
+
+      await log("Connection established. SIP 200 OK.");
+      await log("Analyzing RTP stream for audio fingerprinting...");
+      await new Promise(r => setTimeout(r, 1200));
+
+      // Determine the flow to "discover"
+      let flow = matchCuratedFlow(entryPoint);
+      if (!flow) {
+        await log("No cached fingerprint found. Initiating dynamic traversal.");
+        flow = generateSimulatedFlow(entryPoint);
+      } else {
+        await log(`Matched known IVR signature: ${flow.id}`);
+      }
+
+      await log(`Detected Platform: ${flow.platform} (${flow.industry})`);
+      await new Promise(r => setTimeout(r, 800));
+
+      await log("Voice Activity Detected. Transcribing welcome prompt...");
+      await new Promise(r => setTimeout(r, 1000));
+
+      // Insert Root Node
+      const rootId = await ctx.runMutation(internal.discovery.insertNode, {
+        projectId,
+        type: "menu",
+        label: "Main Menu",
+        content: flow.welcome,
+        metadata: {
+          platform: flow.platform,
+          industry: flow.industry,
+          entryPoint,
+          confidence: 0.99,
+        },
+      });
+
+      await log("Root menu mapped. Exploring branches...");
+
+      // Recursive function to "crawl" branches with delays
+      const crawlBranches = async (branches: FlowNode[], parentId: Id<"ivr_nodes">) => {
+        for (const branch of branches) {
+          await new Promise(r => setTimeout(r, 600)); // Crawl delay
+          await log(`Navigating option: ${branch.label} (DTMF: ${branch.metadata?.dtmf || "Voice"})`);
+
+          const nodeId = await ctx.runMutation(internal.discovery.insertNode, {
+            projectId,
+            parentId,
+            type: branch.type,
+            label: branch.label,
+            content: branch.content,
+            metadata: branch.metadata,
+          });
+
+          if (branch.children && branch.children.length > 0) {
+            await crawlBranches(branch.children, nodeId);
+          }
+        }
+      };
+
+      await crawlBranches(flow.branches, rootId);
+
+      await log("Traversal complete. All reachable nodes mapped.");
+      await log("Disconnecting session.");
+
+      await ctx.runMutation(internal.discovery.completeJob, {
+        jobId,
+        projectId,
+        platform: flow.platform,
+        status: "completed",
+      });
+
+    } catch (error: any) {
+      await log(`Error during discovery: ${error.message}`, "error");
+      await ctx.runMutation(internal.discovery.completeJob, {
+        jobId,
+        projectId,
+        platform: "Unknown",
+        status: "failed",
+      });
+    }
+  },
+});
+
+// --- Queries --- //
+
+export const getJob = query({
+  args: { jobId: v.id("discovery_jobs") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.jobId);
+  },
+});
+
+export const getLogs = query({
+  args: { jobId: v.id("discovery_jobs") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("discovery_logs")
+      .withIndex("by_job", (q) => q.eq("jobId", args.jobId))
+      .order("asc")
+      .collect();
   },
 });
 

@@ -41,6 +41,22 @@ const schema = defineSchema(
       platform: v.optional(v.string()), // Detected platform (e.g. Amazon Connect, Genesys)
     }).index("by_creator", ["createdBy"]),
 
+    discovery_jobs: defineTable({
+      projectId: v.id("projects"),
+      status: v.string(), // queued, running, completed, failed
+      entryPoint: v.string(),
+      platform: v.optional(v.string()),
+      startTime: v.number(),
+      endTime: v.optional(v.number()),
+    }).index("by_project", ["projectId"]),
+
+    discovery_logs: defineTable({
+      jobId: v.id("discovery_jobs"),
+      message: v.string(),
+      type: v.string(), // info, error, debug
+      timestamp: v.number(),
+    }).index("by_job", ["jobId"]),
+
     ivr_nodes: defineTable({
       projectId: v.id("projects"),
       parentId: v.optional(v.id("ivr_nodes")),

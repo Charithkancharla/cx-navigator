@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery, useAction } from "convex/react";
 import { Network, RefreshCw, Search, Server, ShieldCheck, Terminal, Activity } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router";
@@ -16,9 +16,15 @@ export default function Discovery() {
   const { projectId } = useParams();
   const project = useQuery(api.projects.get, { id: projectId as Id<"projects"> });
   const nodes = useQuery(api.discovery.getNodes, { projectId: projectId as Id<"projects"> });
-  const discover = useMutation(api.discovery.discover);
+  
+  const createJob = useMutation(api.discovery.createJob);
+  const runDiscovery = useAction(api.discovery.runDiscovery);
+  
+  const [currentJobId, setCurrentJobId] = useState<Id<"discovery_jobs"> | null>(null);
+  const job = useQuery(api.discovery.getJob, currentJobId ? { jobId: currentJobId } : "skip");
+  const logs = useQuery(api.discovery.getLogs, currentJobId ? { jobId: currentJobId } : "skip");
+
   const [isDiscovering, setIsDiscovering] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll logs
@@ -28,46 +34,35 @@ export default function Discovery() {
     }
   }, [logs]);
 
-  const addLog = (message: string) => {
-    setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
-  };
-
   const handleDiscover = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsDiscovering(true);
-    setLogs([]);
     const formData = new FormData(e.currentTarget);
     const inputVal = formData.get("inputValue") as string;
     
     try {
-      addLog(`Initializing discovery agent for target: ${inputVal}`);
-      await new Promise(r => setTimeout(r, 800));
-      
-      addLog("Dialing endpoint via SIP trunk...");
-      await new Promise(r => setTimeout(r, 1200));
-      
-      addLog("Connection established. 200 OK.");
-      addLog("Analyzing RTP stream for audio fingerprinting...");
-      await new Promise(r => setTimeout(r, 1500));
-      
-      addLog("Detected silence... Waiting for initial prompt.");
-      await new Promise(r => setTimeout(r, 1000));
-      
-      addLog("Voice Activity Detected. Transcribing...");
-      addLog("Identifying IVR Platform signature...");
-      
-      const result = await discover({
+      // 1. Create Job
+      const jobId = await createJob({
         projectId: projectId as Id<"projects">,
-        inputType: formData.get("inputType") as "phone" | "sip" | "file" | "text",
-        inputValue: inputVal,
+        entryPoint: inputVal,
+      });
+      setCurrentJobId(jobId);
+
+      // 2. Run Discovery Action (Async)
+      // We don't await this fully because we want to show logs as they happen
+      // But useAction returns a promise that resolves when the action is done.
+      // We can await it to know when to stop the "loading" state on the button, 
+      // but the logs will update via the useQuery subscription.
+      await runDiscovery({
+        jobId,
+        projectId: projectId as Id<"projects">,
+        entryPoint: inputVal,
       });
       
-      addLog("Mapping menu structure...");
-      addLog("Discovery complete. Disconnecting.");
-      toast.success(result.message);
+      toast.success("Discovery completed successfully");
     } catch (error) {
-      addLog("Error: Connection timed out or rejected.");
       toast.error("Discovery failed");
+      console.error(error);
     } finally {
       setIsDiscovering(false);
     }
@@ -130,7 +125,7 @@ export default function Discovery() {
             <h3 className="text-lg font-semibold">Discovered Nodes ({nodes?.length || 0})</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {nodes?.map((node) => (
-                <Card key={node._id} className="relative overflow-hidden border-l-4" style={{ 
+                <Card key={node._id} className="relative overflow-hidden border-l-4 animate-in fade-in zoom-in-95 duration-300" style={{ 
                   borderLeftColor: project?.platform?.includes('Amazon') ? '#FF9900' : 
                                   project?.platform?.includes('Genesys') ? '#FF4F1F' : 
                                   project?.platform?.includes('Twilio') ? '#F22F46' : '#3b82f6'
@@ -184,13 +179,13 @@ export default function Discovery() {
                 ref={scrollRef}
                 className="absolute inset-0 overflow-y-auto p-4 space-y-1"
               >
-                {logs.length === 0 ? (
+                {!logs || logs.length === 0 ? (
                   <div className="text-zinc-600 italic">Waiting for input...</div>
                 ) : (
-                  logs.map((log, i) => (
-                    <div key={i} className="break-all">
-                      <span className="opacity-50 mr-2">{log.split(']')[0]}]</span>
-                      <span>{log.split(']')[1]}</span>
+                  logs.map((log) => (
+                    <div key={log._id} className="break-all">
+                      <span className="opacity-50 mr-2">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                      <span className={log.type === 'error' ? 'text-red-500' : ''}>{log.message}</span>
                     </div>
                   ))
                 )}
