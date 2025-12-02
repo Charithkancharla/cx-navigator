@@ -128,7 +128,7 @@ export default function TestLab() {
       </Card>
 
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{selectedTest?.title}</DialogTitle>
             <DialogDescription>{selectedTest?.description}</DialogDescription>
@@ -140,16 +140,16 @@ export default function TestLab() {
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead className="w-[50px]">#</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead className="w-[100px]">Action</TableHead>
                     <TableHead>Value / Prompt</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {selectedTest?.steps.map((step: any, index: number) => (
                     <TableRow key={index}>
-                      <TableCell className="font-mono text-xs text-muted-foreground">{index + 1}</TableCell>
-                      <TableCell className="font-medium capitalize">{step.action}</TableCell>
-                      <TableCell className="font-mono text-sm">{step.value}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground align-top">{index + 1}</TableCell>
+                      <TableCell className="font-medium capitalize align-top">{step.action}</TableCell>
+                      <TableCell className="font-mono text-sm whitespace-pre-wrap break-words">{step.value}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
