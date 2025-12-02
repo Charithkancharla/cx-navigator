@@ -11,6 +11,7 @@ import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function Discovery() {
   const { projectId } = useParams();
@@ -25,6 +26,7 @@ export default function Discovery() {
   const logs = useQuery(api.discovery.getLogs, currentJobId ? { jobId: currentJobId } : "skip");
 
   const [isDiscovering, setIsDiscovering] = useState(false);
+  const [inputType, setInputType] = useState("phone");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll logs
@@ -78,10 +80,10 @@ export default function Discovery() {
               <CardDescription>Configure and run automated discovery to map your CX system.</CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleDiscover} className="flex gap-4 items-end">
+              <form onSubmit={handleDiscover} className="flex gap-4 items-start">
                 <div className="space-y-2 w-[140px]">
                   <Label>Input Type</Label>
-                  <Select name="inputType" defaultValue="phone">
+                  <Select name="inputType" value={inputType} onValueChange={setInputType}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -94,9 +96,22 @@ export default function Discovery() {
                 </div>
                 <div className="space-y-2 flex-1">
                   <Label>Target Value</Label>
-                  <Input name="inputValue" placeholder="+1 (555) 000-0000" required />
+                  {inputType === "text" ? (
+                    <Textarea 
+                      name="inputValue" 
+                      placeholder="Paste transcript here..." 
+                      required 
+                      className="min-h-[38px] max-h-[200px]" 
+                    />
+                  ) : (
+                    <Input 
+                      name="inputValue" 
+                      placeholder={inputType === "sip" ? "sip:user@domain.com" : "+1 (555) 000-0000"} 
+                      required 
+                    />
+                  )}
                 </div>
-                <Button type="submit" disabled={isDiscovering}>
+                <Button type="submit" disabled={isDiscovering} className="mt-8">
                   {isDiscovering ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
                   {isDiscovering ? "Crawling..." : "Start Discovery"}
                 </Button>
