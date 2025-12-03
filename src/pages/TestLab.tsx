@@ -45,6 +45,8 @@ export default function TestLab() {
         projectId: projectId as Id<"projects">,
         title: formData.get("title") as string,
         description: formData.get("description") as string,
+        entryPoint: formData.get("entryPoint") as string,
+        expectedPrompt: formData.get("expectedPrompt") as string,
       });
       setIsCreateOpen(false);
       toast.success("Test case created successfully");
@@ -94,6 +96,16 @@ export default function TestLab() {
                 <div className="space-y-2">
                   <Label htmlFor="title">Title</Label>
                   <Input id="title" name="title" required placeholder="e.g. Verify Login Flow" />
+                </div>
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="entryPoint">Phone Number to Call</Label>
+                    <Input id="entryPoint" name="entryPoint" required placeholder="+1 (555) 000-0000" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="expectedPrompt">Expected Prompt</Label>
+                  <Textarea id="expectedPrompt" name="expectedPrompt" required placeholder="What should the system say?" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="description">Description</Label>

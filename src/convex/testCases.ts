@@ -74,6 +74,8 @@ export const create = mutation({
     projectId: v.id("projects"),
     title: v.string(),
     description: v.optional(v.string()),
+    entryPoint: v.string(),
+    expectedPrompt: v.string(),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("test_cases", {
@@ -81,8 +83,8 @@ export const create = mutation({
       title: args.title,
       description: args.description,
       steps: [
-        { action: "call", value: "+15550000000" },
-        { action: "listen", value: "Welcome to the service" }
+        { action: "call", value: args.entryPoint },
+        { action: "listen", value: args.expectedPrompt }
       ], // Default steps
       status: "draft",
       tags: ["manual"],
