@@ -69,6 +69,27 @@ export const list = query({
   },
 });
 
+export const create = mutation({
+  args: {
+    projectId: v.id("projects"),
+    title: v.string(),
+    description: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("test_cases", {
+      projectId: args.projectId,
+      title: args.title,
+      description: args.description,
+      steps: [
+        { action: "call", value: "+15550000000" },
+        { action: "listen", value: "Welcome to the service" }
+      ], // Default steps
+      status: "draft",
+      tags: ["manual"],
+    });
+  },
+});
+
 export const updateStatus = mutation({
   args: { 
     id: v.id("test_cases"), 

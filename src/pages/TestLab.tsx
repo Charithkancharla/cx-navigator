@@ -10,15 +10,20 @@ import { CheckCircle2, Eye, FilePlus, Play, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { useParams } from "react-router";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function TestLab() {
   const { projectId } = useParams();
   const testCases = useQuery(api.testCases.list, { projectId: projectId as Id<"projects"> });
   const generate = useMutation(api.testCases.generateFromNodes);
+  const createTestCase = useMutation(api.testCases.create);
   const runTest = useMutation(api.execution.runTest);
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedTest, setSelectedTest] = useState<Doc<"test_cases"> | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   const handleGenerate = async () => {
     setIsGenerating(true);
@@ -29,6 +34,22 @@ export default function TestLab() {
       toast.error("Failed to generate test cases");
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    try {
+      await createTestCase({
+        projectId: projectId as Id<"projects">,
+        title: formData.get("title") as string,
+        description: formData.get("description") as string,
+      });
+      setIsCreateOpen(false);
+      toast.success("Test case created successfully");
+    } catch (error) {
+      toast.error("Failed to create test case");
     }
   };
 
@@ -59,10 +80,32 @@ export default function TestLab() {
             {isGenerating ? <Sparkles className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
             Auto-Generate
           </Button>
-          <Button>
-            <FilePlus className="mr-2 h-4 w-4" />
-            New Test Case
-          </Button>
+          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <Button onClick={() => setIsCreateOpen(true)}>
+              <FilePlus className="mr-2 h-4 w-4" />
+              New Test Case
+            </Button>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create New Test Case</DialogTitle>
+                <DialogDescription>Define a new manual test case.</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleCreate} className="space-y-4 mt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="title">Title</Label>
+                  <Input id="title" name="title" required placeholder="e.g. Verify Login Flow" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea id="description" name="description" placeholder="Describe the test scenario..." />
+                </div>
+                <div className="flex justify-end gap-2 mt-6">
+                  <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
+                  <Button type="submit">Create Test Case</Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
