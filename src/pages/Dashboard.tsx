@@ -52,7 +52,8 @@ export default function Dashboard() {
       await deleteProject({ id: projectId });
       toast.success("Project deleted successfully");
     } catch (error) {
-      toast.error("Failed to delete project");
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : "Failed to delete project");
     }
   };
 
