@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Activity, FileText, LayoutDashboard, Network, Play, Settings } from "lucide-react";
+import { Activity, ChevronLeft, FileText, LayoutDashboard, Network, Play, Settings } from "lucide-react";
 import { Link, useLocation, useParams } from "react-router";
 
 export function ProjectSidebar() {
@@ -38,6 +38,15 @@ export function ProjectSidebar() {
   return (
     <div className="w-64 border-r bg-sidebar h-[calc(100vh-4rem)] flex flex-col">
       <div className="p-4">
+        <div className="mb-4 pb-4 border-b border-sidebar-border/50">
+          <Link to="/dashboard">
+            <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground pl-2">
+              <ChevronLeft className="h-4 w-4" />
+              Back to Dashboard
+            </Button>
+          </Link>
+        </div>
+
         <h2 className="text-lg font-semibold tracking-tight px-2 mb-4">Project Menu</h2>
         <nav className="space-y-1">
           {items.map((item) => (

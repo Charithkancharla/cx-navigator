@@ -2,13 +2,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Plus, Activity, Phone, MessageSquare, Play } from "lucide-react";
+import { Plus, Activity, Phone, MessageSquare, Play, ChevronLeft } from "lucide-react";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useNavigate } from "react-router";
+import { useNavigate, Link } from "react-router";
 import { toast } from "sonner";
 
 export default function Dashboard() {
@@ -37,6 +37,11 @@ export default function Dashboard() {
     <div className="p-8 max-w-7xl mx-auto space-y-8">
       <div className="flex justify-between items-center">
         <div>
+          <Link to="/">
+            <Button variant="ghost" size="sm" className="h-6 px-0 -ml-2 text-muted-foreground hover:text-foreground mb-2">
+              <ChevronLeft className="h-4 w-4 mr-1" /> Back to Home
+            </Button>
+          </Link>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground mt-2">Manage your CX assurance projects and test suites.</p>
         </div>
