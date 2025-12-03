@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Plus, Activity, Phone, MessageSquare, Play, ChevronLeft } from "lucide-react";
+import { Plus, Activity, Phone, MessageSquare, Play, ChevronLeft, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -10,10 +10,23 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useNavigate, Link } from "react-router";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Id } from "@/convex/_generated/dataModel";
 
 export default function Dashboard() {
   const projects = useQuery(api.projects.list, { paginationOpts: { numItems: 20, cursor: null } });
   const createProject = useMutation(api.projects.create);
+  const deleteProject = useMutation(api.projects.deleteProject);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -30,6 +43,16 @@ export default function Dashboard() {
       toast.success("Project created successfully");
     } catch (error) {
       toast.error("Failed to create project");
+    }
+  };
+
+  const handleDelete = async (e: React.MouseEvent, projectId: Id<"projects">) => {
+    e.stopPropagation();
+    try {
+      await deleteProject({ id: projectId });
+      toast.success("Project deleted successfully");
+    } catch (error) {
+      toast.error("Failed to delete project");
     }
   };
 
@@ -123,11 +146,45 @@ export default function Dashboard() {
         <h2 className="text-xl font-semibold tracking-tight">Recent Projects</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {projects?.page.map((project) => (
-            <Card key={project._id} className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => navigate(`/project/${project._id}`)}>
+            <Card key={project._id} className="cursor-pointer hover:border-primary/50 transition-colors group" onClick={() => navigate(`/project/${project._id}`)}>
               <CardHeader>
                 <div className="flex justify-between items-start">
-                  <CardTitle className="text-lg">{project.name}</CardTitle>
-                  {project.type === 'voice' ? <Phone className="h-4 w-4 text-muted-foreground" /> : <MessageSquare className="h-4 w-4 text-muted-foreground" />}
+                  <div className="flex-1 mr-2">
+                    <CardTitle className="text-lg">{project.name}</CardTitle>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {project.type === 'voice' ? <Phone className="h-4 w-4 text-muted-foreground" /> : <MessageSquare className="h-4 w-4 text-muted-foreground" />}
+                    
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete the project "{project.name}" and all associated data.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
+                          <AlertDialogAction 
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={(e) => handleDelete(e, project._id)}
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
                 </div>
                 <CardDescription>{project.description || "No description provided"}</CardDescription>
               </CardHeader>

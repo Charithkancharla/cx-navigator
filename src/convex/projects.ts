@@ -22,6 +22,26 @@ export const create = mutation({
   },
 });
 
+export const deleteProject = mutation({
+  args: { id: v.id("projects") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+
+    const project = await ctx.db.get(args.id);
+    if (!project) throw new Error("Project not found");
+
+    if (project.createdBy !== identity.subject) {
+      throw new Error("Unauthorized to delete this project");
+    }
+
+    await ctx.db.delete(args.id);
+    
+    // Note: In a production app, we would also cascade delete related 
+    // ivr_nodes, discovery_jobs, test_cases, etc. here.
+  },
+});
+
 export const list = query({
   args: { paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
