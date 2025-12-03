@@ -28,6 +28,7 @@ export default function Dashboard() {
   const createProject = useMutation(api.projects.create);
   const deleteProject = useMutation(api.projects.deleteProject);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [newProjectType, setNewProjectType] = useState<"voice" | "chat" | "omni">("voice");
   const navigate = useNavigate();
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -36,12 +37,14 @@ export default function Dashboard() {
     try {
       await createProject({
         name: formData.get("name") as string,
-        description: formData.get("description") as string,
-        type: formData.get("type") as "voice" | "chat" | "omni",
+        description: (formData.get("description") as string) || "",
+        type: newProjectType,
       });
       setIsCreateOpen(false);
+      setNewProjectType("voice");
       toast.success("Project created successfully");
     } catch (error) {
+      console.error(error);
       toast.error("Failed to create project");
     }
   };
@@ -86,7 +89,7 @@ export default function Dashboard() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="type">Type</Label>
-                <Select name="type" defaultValue="voice">
+                <Select name="type" value={newProjectType} onValueChange={(v) => setNewProjectType(v as "voice" | "chat" | "omni")}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
