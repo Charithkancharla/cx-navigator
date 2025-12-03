@@ -1,0 +1,152 @@
+// ... imports
+import { ChevronRight, ChevronDown, AlertTriangle } from "lucide-react";
+
+// ... inside component
+export const completeJob = internalMutation({
+  args: {
+    jobId: v.id("discovery_jobs"),
+    status: v.string(),
+    endTime: v.number(),
+    platform: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: args.status,
+      endTime: Date.now(),
+      platform: args.platform,
+    });
+    await ctx.db.patch(args.projectId, {
+      platform: args.platform,
+    });
+  },
+});
+
+export const resumeJob = mutation({
+  args: {
+    jobId: v.id("discovery_jobs"),
+    input: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: "running",
+      waitingFor: undefined,
+    });
+  },
+});
+
+export const setWaiting = internalMutation({
+  args: {
+    jobId: v.id("discovery_jobs"),
+    waitingFor: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: "waiting_for_input",
+      waitingFor: args.waitingFor,
+    });
+  },
+});
+
+export const continueDiscovery = action({
+  args: {
+    jobId: v.id("discovery_jobs"),
+    projectId: v.id("projects"),
+    input: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { jobId, projectId, input } = args;
+    const log = async (msg: string, type: string = "info") => {
+      await ctx.runMutation(internal.discovery.writeLog, { jobId, message: msg, type });
+    };
+
+    await log(`User provided input: ${input}`);
+    await new Promise(r => setTimeout(r, 1000));
+    await log("Input accepted. Authenticated successfully.");
+    await new Promise(r => setTimeout(r, 800));
+    
+    // Simulate discovering the protected area
+    const parentNodes = await ctx.runQuery(api.discovery.getNodes, { projectId });
+    const lastNode = parentNodes[parentNodes.length - 1];
+
+    if (lastNode) {
+      await ctx.runMutation(internal.discovery.insertNode, {
+        projectId,
+        parentId: lastNode._id,
+        type: "menu",
+        label: "Secure Account Menu",
+        content: "Welcome to your secure account dashboard. Press 1 for statements.",
+        metadata: { confidence: 0.99, protected: true },
+      });
+    }
+
+    await log("Secure area mapped.");
+    await ctx.runMutation(internal.discovery.completeJob, {
+      jobId,
+      projectId,
+      platform: "Authenticated System",
+      status: "completed",
+    });
+  }
+});
+
+// --- Action: The "Crawl Engine" --- //
+
+export const runDiscovery = action({
+  args: {
+    projectId: v.id("projects"),
+    input: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { projectId, input } = args;
+    const log = async (msg: string, type: string = "info") => {
+      await ctx.runMutation(internal.discovery.writeLog, { jobId, message: msg, type });
+    };
+
+    await log(`User provided input: ${input}`);
+    await new Promise(r => setTimeout(r, 1000));
+    await log("Input accepted. Authenticated successfully.");
+    await new Promise(r => setTimeout(r, 800));
+    
+    // Simulate discovering the protected area
+    const parentNodes = await ctx.runQuery(api.discovery.getNodes, { projectId });
+    const lastNode = parentNodes[parentNodes.length - 1];
+
+    if (lastNode) {
+      await ctx.runMutation(internal.discovery.insertNode, {
+        projectId,
+        parentId: lastNode._id,
+        type: "menu",
+        label: "Secure Account Menu",
+        content: "Welcome to your secure account dashboard. Press 1 for statements.",
+        metadata: { confidence: 0.99, protected: true },
+      });
+    }
+
+    await log("Secure area mapped.");
+    await ctx.runMutation(internal.discovery.completeJob, {
+      jobId,
+      projectId,
+      platform: "Authenticated System",
+      status: "completed",
+    });
+  }
+});
+
+// ... inside render
+// Check if job.status === 'waiting_for_input'
+
+function NodeTree({ nodes, parentId = null, level = 0 }: { nodes: any[], parentId: string | null, level: number }) {
+  const children = nodes.filter(n => n.parentId === parentId || (!parentId && !n.parentId));
+  if (children.length === 0) return null;
+
+  return (
+    <div className={`pl-${level > 0 ? 4 : 0} border-l-${level > 0 ? 2 : 0} border-muted ml-${level > 0 ? 2 : 0}`}>
+      {children.map(node => (
+        <div key={node._id} className="mb-2">
+           {/* Node Card */}
+           <NodeTree nodes={nodes} parentId={node._id} level={level + 1} />
+        </div>
+      ))}
+    </div>
+  )
+}

@@ -43,12 +43,13 @@ const schema = defineSchema(
 
     discovery_jobs: defineTable({
       projectId: v.id("projects"),
-      status: v.string(), // queued, running, completed, failed
+      status: v.string(), // queued, running, completed, failed, waiting_for_input
       entryPoint: v.string(),
       inputType: v.optional(v.string()), // Added inputType field
       platform: v.optional(v.string()),
       startTime: v.number(),
       endTime: v.optional(v.number()),
+      waitingFor: v.optional(v.string()), // What input we are waiting for (e.g. "pin", "otp")
     }).index("by_project", ["projectId"]),
 
     discovery_logs: defineTable({

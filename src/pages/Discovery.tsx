@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useMutation, useQuery, useAction } from "convex/react";
-import { Network, RefreshCw, Search, Server, ShieldCheck, Terminal, Activity } from "lucide-react";
+import { Network, RefreshCw, Search, Server, ShieldCheck, Terminal, Activity, ChevronRight, ChevronDown, AlertTriangle, Play } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router";
 import { toast } from "sonner";
@@ -20,6 +20,8 @@ export default function Discovery() {
   
   const createJob = useMutation(api.discovery.createJob);
   const runDiscovery = useAction(api.discovery.runDiscovery);
+  const resumeJob = useMutation(api.discovery.resumeJob);
+  const continueDiscovery = useAction(api.discovery.continueDiscovery);
   
   const [currentJobId, setCurrentJobId] = useState<Id<"discovery_jobs"> | null>(null);
   const job = useQuery(api.discovery.getJob, currentJobId ? { jobId: currentJobId } : "skip");
@@ -27,6 +29,7 @@ export default function Discovery() {
 
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [inputType, setInputType] = useState("phone");
+  const [manualInput, setManualInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll logs
@@ -35,6 +38,19 @@ export default function Discovery() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [logs]);
+
+  // Sync local discovering state with job status
+  useEffect(() => {
+    if (job) {
+      if (job.status === "running" || job.status === "queued") {
+        setIsDiscovering(true);
+      } else if (job.status === "waiting_for_input") {
+        setIsDiscovering(false); // Stop spinner, show input
+      } else {
+        setIsDiscovering(false);
+      }
+    }
+  }, [job]);
 
   const handleDiscover = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -52,22 +68,37 @@ export default function Discovery() {
       setCurrentJobId(jobId);
 
       // 2. Run Discovery Action (Async)
-      // We don't await this fully because we want to show logs as they happen
-      // But useAction returns a promise that resolves when the action is done.
-      // We can await it to know when to stop the "loading" state on the button, 
-      // but the logs will update via the useQuery subscription.
-      await runDiscovery({
+      runDiscovery({
         jobId,
         projectId: projectId as Id<"projects">,
         entryPoint: inputVal,
         inputType: inputType,
       });
       
-      toast.success("Discovery completed successfully");
+      toast.success("Discovery started");
     } catch (error) {
-      toast.error("Discovery failed");
+      toast.error("Discovery failed to start");
       console.error(error);
-    } finally {
+      setIsDiscovering(false);
+    }
+  };
+
+  const handleResume = async () => {
+    if (!currentJobId || !manualInput) return;
+    
+    try {
+      setIsDiscovering(true);
+      await resumeJob({ jobId: currentJobId, input: manualInput });
+      // Trigger the continue action
+      continueDiscovery({ 
+        jobId: currentJobId, 
+        projectId: projectId as Id<"projects">, 
+        input: manualInput 
+      });
+      setManualInput("");
+      toast.success("Input sent to crawler");
+    } catch (e) {
+      toast.error("Failed to resume");
       setIsDiscovering(false);
     }
   };
@@ -113,13 +144,42 @@ export default function Discovery() {
                     />
                   )}
                 </div>
-                <Button type="submit" disabled={isDiscovering} className="mt-8">
+                <Button type="submit" disabled={isDiscovering || (job?.status === 'waiting_for_input')} className="mt-8">
                   {isDiscovering ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
                   {isDiscovering ? "Crawling..." : "Start Discovery"}
                 </Button>
               </form>
             </CardContent>
           </Card>
+
+          {/* Human Intervention Panel */}
+          {job?.status === "waiting_for_input" && (
+            <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20 animate-in fade-in slide-in-from-top-2">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2 text-yellow-600 dark:text-yellow-400">
+                  <AlertTriangle className="h-5 w-5" />
+                  <CardTitle className="text-base">Human Intervention Required</CardTitle>
+                </div>
+                <CardDescription>The crawler has paused and requires manual input to proceed.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-4 items-end">
+                  <div className="space-y-2 flex-1">
+                    <Label>Enter {job.waitingFor || "Input"}</Label>
+                    <Input 
+                      value={manualInput} 
+                      onChange={(e) => setManualInput(e.target.value)} 
+                      placeholder={`Enter ${job.waitingFor || "value"}...`}
+                      className="bg-background"
+                    />
+                  </div>
+                  <Button onClick={handleResume} className="bg-yellow-600 hover:bg-yellow-700 text-white">
+                    <Play className="mr-2 h-4 w-4" /> Resume Crawl
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {project?.platform && (
             <div className="bg-muted/50 border rounded-lg p-4 flex items-center gap-4 animate-in fade-in slide-in-from-top-2">
@@ -139,45 +199,16 @@ export default function Discovery() {
           )}
 
           <div className="grid gap-4">
-            <h3 className="text-lg font-semibold">Discovered Nodes ({nodes?.length || 0})</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {nodes?.map((node) => (
-                <Card key={node._id} className="relative overflow-hidden border-l-4 animate-in fade-in zoom-in-95 duration-300" style={{ 
-                  borderLeftColor: project?.platform?.includes('Amazon') ? '#FF9900' : 
-                                  project?.platform?.includes('Genesys') ? '#FF4F1F' : 
-                                  project?.platform?.includes('Twilio') ? '#F22F46' : '#3b82f6'
-                }}>
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                      <CardTitle className="text-base">{node.label}</CardTitle>
-                      <span className="text-[10px] uppercase tracking-wider bg-secondary px-2 py-0.5 rounded-full text-secondary-foreground">
-                        {node.type}
-                      </span>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground line-clamp-3 mb-3 italic">"{node.content}"</p>
-                    <div className="flex gap-2 flex-wrap">
-                      {node.metadata?.dtmf && (
-                        <div className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded border">
-                          DTMF: {node.metadata.dtmf}
-                        </div>
-                      )}
-                      {node.metadata?.confidence && (
-                        <div className="text-xs font-mono bg-green-50 dark:bg-green-950/30 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded border border-green-200 dark:border-green-900">
-                          Conf: {Math.round(node.metadata.confidence * 100)}%
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-              {nodes?.length === 0 && (
-                <div className="col-span-full text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg">
-                  <Network className="h-12 w-12 mx-auto mb-4 opacity-20" />
-                  No nodes discovered yet. Run discovery to map the system.
-                </div>
-              )}
+            <h3 className="text-lg font-semibold">Discovered Flow Map ({nodes?.length || 0} Nodes)</h3>
+            <div className="border rounded-lg p-4 bg-card min-h-[200px]">
+               {nodes && nodes.length > 0 ? (
+                 <FlowTree nodes={nodes} />
+               ) : (
+                 <div className="text-center py-12 text-muted-foreground">
+                   <Network className="h-12 w-12 mx-auto mb-4 opacity-20" />
+                   No nodes discovered yet. Run discovery to map the system.
+                 </div>
+               )}
             </div>
           </div>
         </div>
@@ -209,15 +240,55 @@ export default function Discovery() {
                 {isDiscovering && (
                   <div className="animate-pulse mt-2">_</div>
                 )}
+                {job?.status === "waiting_for_input" && (
+                   <div className="text-yellow-500 mt-2 animate-pulse">
+                     {">"} WAITING FOR USER INPUT...
+                   </div>
+                )}
               </div>
             </CardContent>
             <div className="p-2 border-t border-zinc-800 bg-zinc-900/50 text-[10px] text-zinc-500 flex justify-between">
-              <span>STATUS: {isDiscovering ? "ACTIVE" : "IDLE"}</span>
+              <span>STATUS: {job?.status?.toUpperCase() || "IDLE"}</span>
               <span>AGENT: vly-crawler-01</span>
             </div>
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+function FlowTree({ nodes, parentId = undefined, level = 0 }: { nodes: any[], parentId?: string, level?: number }) {
+  // Find nodes that belong to this parent
+  // If parentId is undefined, find root nodes (nodes with no parentId)
+  const children = nodes.filter(n => n.parentId === parentId || (!parentId && !n.parentId));
+
+  if (children.length === 0) return null;
+
+  return (
+    <div className={`flex flex-col gap-2 ${level > 0 ? "ml-6 border-l-2 border-muted pl-4" : ""}`}>
+      {children.map((node) => (
+        <div key={node._id} className="relative">
+          {level > 0 && (
+             <div className="absolute -left-[22px] top-3 w-4 h-0.5 bg-muted" />
+          )}
+          <div className="border rounded p-3 bg-background hover:bg-muted/50 transition-colors">
+            <div className="flex justify-between items-start mb-1">
+              <span className="font-medium text-sm">{node.label}</span>
+              <span className="text-[10px] uppercase tracking-wider bg-secondary px-2 py-0.5 rounded-full text-secondary-foreground">
+                {node.type}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground line-clamp-2 italic">"{node.content}"</p>
+            {node.metadata?.dtmf && (
+               <div className="mt-2 text-[10px] font-mono bg-muted inline-block px-1.5 py-0.5 rounded">
+                 DTMF: {node.metadata.dtmf}
+               </div>
+            )}
+          </div>
+          <FlowTree nodes={nodes} parentId={node._id} level={level + 1} />
+        </div>
+      ))}
     </div>
   );
 }
