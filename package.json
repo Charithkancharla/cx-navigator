@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "preview": "vite preview",
-    "start:server": "tsx src/server.ts"
+    "start:server": "tsx server.ts"
   },
   "dependencies": {
     "@convex-dev/auth": "^0.0.86",
