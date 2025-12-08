@@ -22,6 +22,14 @@ type CuratedIVR = {
   branches: FlowNode[];
 };
 
+type AudioProcessingResult = {
+  transcript: string;
+  confidence: number;
+  audioUrl: string;
+  durationMs: number;
+  detectedDtmf?: string;
+};
+
 // --- Simulation Data (The "Oracle") --- //
 
 const curatedCatalog: CuratedIVR[] = [
@@ -134,7 +142,7 @@ function generateSimulatedFlow(value: string): CuratedIVR {
 
 function parseTranscriptFlow(text: string): CuratedIVR {
   const branches: FlowNode[] = [];
-  const pressMatches = text.matchAll(/Press (\\d) for ([^.,;]+)/gi);
+  const pressMatches = text.matchAll(/Press (\d) for ([^.,;]+)/gi);
   for (const match of pressMatches) {
     branches.push({
       label: match[2].trim(),
@@ -160,7 +168,7 @@ function normalizeText(text: string): string {
 }
 
 function fingerprintPrompt(text: string): string {
-  // Simple hash for simulation. In production, use a robust hash of the audio or normalized text.
+  // Enhanced fingerprinting with versioning
   let hash = 0;
   const normalized = normalizeText(text);
   if (normalized.length === 0) return "empty";
@@ -169,7 +177,7 @@ function fingerprintPrompt(text: string): string {
     hash = ((hash << 5) - hash) + char;
     hash = hash & hash; // Convert to 32bit integer
   }
-  return Math.abs(hash).toString(16);
+  return `v1:${Math.abs(hash).toString(16)}`;
 }
 
 function extractMenuOptions(text: string): { dtmf: string; label: string }[] {
@@ -213,32 +221,50 @@ class SimulatedTelephonySession {
     }
   }
 
-  async dial(): Promise<string> {
+  async dial(): Promise<AudioProcessingResult> {
     this.isConnected = true;
-    // Start at root (conceptually before the first prompt, but for sim we return welcome)
-    return this.flow.welcome;
+    // Start at root
+    return this.processAudio(this.flow.welcome);
   }
 
-  async sendDtmf(digit: string): Promise<string> {
+  async sendDtmf(digit: string): Promise<AudioProcessingResult> {
     if (!this.isConnected) throw new Error("Call not connected");
     
     // Traverse logic
     let children = this.currentNode ? this.currentNode.children : this.flow.branches;
     
-    if (!children) return "Invalid option.";
+    if (!children) return this.processAudio("Invalid option.");
 
     const match = children.find(c => c.metadata?.dtmf === digit);
     if (match) {
       this.currentNode = match;
-      return match.content;
+      return this.processAudio(match.content);
     }
     
-    return "Invalid selection. Please try again.";
+    return this.processAudio("Invalid selection. Please try again.");
   }
 
   async hangup() {
     this.isConnected = false;
     this.currentNode = null;
+  }
+
+  // Simulate Real Audio Processing (ASR/TTS)
+  private processAudio(text: string): AudioProcessingResult {
+    // In a real implementation, this would:
+    // 1. Fetch audio stream
+    // 2. Send to ASR service (Google/AWS/Deepgram)
+    // 3. Return transcript + confidence + audio URL
+    
+    const confidence = 0.85 + (Math.random() * 0.14); // Random confidence 0.85 - 0.99
+    const duration = text.length * 50; // Approx 50ms per character
+    
+    return {
+      transcript: text,
+      confidence,
+      audioUrl: `https://s3.amazonaws.com/simulated-audio/${Math.random().toString(36).substring(7)}.mp3`,
+      durationMs: duration
+    };
   }
 }
 
@@ -319,12 +345,18 @@ export const completeJob = internalMutation({
     projectId: v.id("projects"),
     platform: v.string(),
     status: v.string(),
+    artifacts: v.optional(v.object({
+      graph: v.string(),
+      report: v.string(),
+      testCases: v.string(),
+    })),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.jobId, {
       status: args.status,
       endTime: Date.now(),
       platform: args.platform,
+      artifacts: args.artifacts,
     });
     await ctx.db.patch(args.projectId, {
       platform: args.platform,
@@ -336,11 +368,13 @@ export const setWaiting = internalMutation({
   args: {
     jobId: v.id("discovery_jobs"),
     waitingFor: v.string(),
+    resumeState: v.string(),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.jobId, {
       status: "waiting_for_input",
       waitingFor: args.waitingFor,
+      resumeState: args.resumeState,
     });
   },
 });
@@ -367,18 +401,41 @@ export const continueDiscovery = action({
     input: v.string(),
   },
   handler: async (ctx, args) => {
-    // For now, just log and complete as this is a complex state resume
-    // In a real implementation, we would need to persist the DFS stack
-    await ctx.runMutation(internal.discovery.writeLog, { 
-      jobId: args.jobId, 
-      message: `Resumed with input: ${args.input}. (Complex resume not fully implemented in sim)`, 
-      type: "info" 
-    });
-    await ctx.runMutation(internal.discovery.completeJob, {
+    const job = await ctx.runQuery(api.discovery.getJob, { jobId: args.jobId });
+    if (!job || !job.resumeState) {
+      throw new Error("Cannot resume job: No state found");
+    }
+
+    const stack = JSON.parse(job.resumeState);
+    // Append the user input to the last path in the stack to "take" that edge
+    if (stack.length > 0) {
+      const lastState = stack[stack.length - 1];
+      // We assume the last state was waiting for input, so we add the input to its path
+      // Actually, we need to push a NEW state that represents taking that input
+      // But for simplicity in this DFS, we'll just assume the input is the next DTMF/Intent
+      // and we need to explore it.
+      
+      // In a real DFS, we would have popped the node, found it needed input, and paused.
+      // So we need to push the next step.
+      // For this simulation, we'll just log it and re-trigger runDiscovery with a special flag or just
+      // call the internal logic. 
+      
+      // To keep it simple: We will just restart the runDiscovery logic but initialize the stack 
+      // with the resumed state + the new input.
+      
+      // However, runDiscovery is self-contained. Let's call runDiscovery with the resume state.
+      // We need to update runDiscovery to accept an optional initialStack.
+    }
+    
+    // For now, we will just call runDiscovery again. 
+    // NOTE: This is a simplification. A real engine would need robust state hydration.
+    await ctx.runAction(api.discovery.runDiscovery, {
       jobId: args.jobId,
       projectId: args.projectId,
-      platform: "Resumed Session",
-      status: "completed",
+      entryPoint: job.entryPoint,
+      inputType: job.inputType,
+      resumeInput: args.input,
+      resumeStack: job.resumeState
     });
   }
 });
@@ -389,9 +446,11 @@ export const runDiscovery = action({
     projectId: v.id("projects"),
     entryPoint: v.string(),
     inputType: v.optional(v.string()),
+    resumeInput: v.optional(v.string()),
+    resumeStack: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { jobId, projectId, entryPoint, inputType } = args;
+    const { jobId, projectId, entryPoint, inputType, resumeInput, resumeStack } = args;
 
     const log = async (msg: string, type: string = "info") => {
       await ctx.runMutation(internal.discovery.writeLog, { jobId, message: msg, type });
@@ -404,40 +463,70 @@ export const runDiscovery = action({
       const visitedFingerprints = new Map<string, Id<"ivr_nodes">>(); // Map fingerprint -> nodeId
       const maxDepth = 5;
       
-      // 2. Define DFS Traversal Function
-      const explore = async (path: string[], parentId?: Id<"ivr_nodes">, depth: number = 0) => {
+      // Stack for Iterative DFS
+      // Each item is a path to explore
+      let stack: { path: string[]; parentId?: Id<"ivr_nodes">; depth: number }[] = [];
+      
+      if (resumeStack) {
+        stack = JSON.parse(resumeStack);
+        await log("Resuming from saved state...", "info");
+        if (resumeInput && stack.length > 0) {
+           // Add the input to the current path we are exploring
+           const current = stack.pop()!;
+           stack.push({ ...current, path: [...current.path, resumeInput] });
+           await log(`Applied manual input: ${resumeInput}`);
+        }
+      } else {
+        stack.push({ path: [], parentId: undefined, depth: 0 });
+      }
+
+      // Metrics for Report
+      const metrics = {
+        startTime: Date.now(),
+        nodesDiscovered: 0,
+        loopsDetected: 0,
+        maxDepthReached: 0,
+        errors: 0
+      };
+
+      // 2. Iterative DFS Loop
+      while (stack.length > 0) {
+        const { path, parentId, depth } = stack.pop()!;
+
         if (depth > maxDepth) {
           await log(`Max depth (${maxDepth}) reached. Pruning branch.`, "debug");
-          return;
+          continue;
         }
+        
+        metrics.maxDepthReached = Math.max(metrics.maxDepthReached, depth);
 
         // A. Dial and Navigate (Replay Path)
-        // In a real system, we might try to "backtrack", but for robustness, we often redial or reset.
-        // Here we simulate a fresh call and navigation to the current point.
         const session = new SimulatedTelephonySession(entryPoint, inputType);
-        let currentText = await session.dial();
+        let result = await session.dial();
         
         // Replay DTMFs to reach current state
         for (const digit of path) {
-          currentText = await session.sendDtmf(digit);
+          result = await session.sendDtmf(digit);
         }
 
         // B. Fingerprint & Loop Detection
-        const fingerprint = fingerprintPrompt(currentText);
+        const fingerprint = fingerprintPrompt(result.transcript);
         const isLoop = visitedFingerprints.has(fingerprint);
         
-        await log(`[Depth ${depth}] Reached node. Fingerprint: ${fingerprint.substring(0, 6)}... ${isLoop ? "(LOOP DETECTED)" : ""}`);
+        await log(`[Depth ${depth}] Reached node. Confidence: ${(result.confidence * 100).toFixed(1)}%`);
 
         // C. Save Node
         const nodeId = await ctx.runMutation(internal.discovery.insertNode, {
           projectId,
           parentId,
-          type: depth === 0 ? "menu" : "prompt", // Simplified type inference
+          type: depth === 0 ? "menu" : "prompt",
           label: depth === 0 ? "Main Menu" : `Option ${path[path.length - 1]}`,
-          content: currentText,
+          content: result.transcript,
           metadata: { 
             path: path.join(">"), 
-            confidence: 1.0,
+            confidence: result.confidence,
+            audioUrl: result.audioUrl,
+            durationMs: result.durationMs,
             dtmf: path.length > 0 ? path[path.length - 1] : undefined
           },
           fingerprint,
@@ -445,35 +534,84 @@ export const runDiscovery = action({
           linkedNodeId: isLoop ? visitedFingerprints.get(fingerprint) : undefined,
         });
 
+        metrics.nodesDiscovered++;
+
         if (isLoop) {
-          await log(`Loop detected back to node ${visitedFingerprints.get(fingerprint)}. Stopping branch.`);
-          return;
+          metrics.loopsDetected++;
+          await log(`Loop detected back to node. Stopping branch.`);
+          continue;
         }
 
         // Mark visited
         visitedFingerprints.set(fingerprint, nodeId);
 
         // D. Extract Options & Recurse
-        const options = extractMenuOptions(currentText);
+        const options = extractMenuOptions(result.transcript);
         
         if (options.length > 0) {
           await log(`Found ${options.length} options: ${options.map(o => o.dtmf).join(", ")}`);
           
           // Simulate delay for realism
-          await new Promise(r => setTimeout(r, 800));
+          await new Promise(r => setTimeout(r, 500));
 
-          for (const option of options) {
-            await explore([...path, option.dtmf], nodeId, depth + 1);
+          // Push options to stack (reverse order to process 1 first if using pop)
+          for (let i = options.length - 1; i >= 0; i--) {
+            stack.push({ 
+              path: [...path, options[i].dtmf], 
+              parentId: nodeId, 
+              depth: depth + 1 
+            });
           }
         } else {
+          // Check if we need manual input (Simulated logic: if text contains "enter" or "pin" and no options found)
+          if (result.transcript.toLowerCase().includes("enter") && options.length === 0) {
+             await log("Node requires input. Pausing for human intervention.", "warning");
+             
+             // Save state and pause
+             // We push the current state back but without the input (so we are at the node)
+             // Actually, we want to resume by TAKING an action from this node.
+             // So we save the stack as is, but we need to know WHICH node we are at.
+             // The stack currently contains other branches to explore.
+             // We need to add THIS branch back to the stack so when we resume we continue from here.
+             stack.push({ path, parentId, depth }); 
+             
+             await ctx.runMutation(internal.discovery.setWaiting, {
+               jobId,
+               waitingFor: "PIN/ID",
+               resumeState: JSON.stringify(stack)
+             });
+             return; // Exit action, wait for resume
+          }
+          
           await log("No further options found. Leaf node.");
         }
         
         await session.hangup();
-      };
+      }
 
-      // 3. Start Crawl
-      await explore([]);
+      // 3. Generate Artifacts
+      await log("Generating artifacts...");
+      
+      // Graph JSON
+      const nodes = await ctx.runQuery(api.discovery.getNodes, { projectId });
+      const graphJson = JSON.stringify({ nodes, edges: [] }, null, 2); // Simplified graph
+      
+      // Report JSON
+      const reportJson = JSON.stringify({
+        jobId,
+        entryPoint,
+        platform: "Simulated/Discovered",
+        metrics: {
+          ...metrics,
+          duration: Date.now() - metrics.startTime,
+          totalNodes: nodes.length
+        },
+        timestamp: new Date().toISOString()
+      }, null, 2);
+      
+      // Test Cases JSON (Generate them)
+      const testGenResult = await ctx.runMutation(internal.testCases.generateInternal, { projectId });
+      const testCasesJson = JSON.stringify(testGenResult.generatedTests || [], null, 2);
 
       await log("Graph traversal complete.");
       await ctx.runMutation(internal.discovery.completeJob, {
@@ -481,6 +619,11 @@ export const runDiscovery = action({
         projectId,
         platform: "Simulated/Discovered",
         status: "completed",
+        artifacts: {
+          graph: graphJson,
+          report: reportJson,
+          testCases: testCasesJson
+        }
       });
 
     } catch (error: any) {

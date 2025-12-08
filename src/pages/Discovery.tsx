@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useMutation, useQuery, useAction } from "convex/react";
-import { Network, RefreshCw, Search, Server, ShieldCheck, Terminal, Activity, ChevronRight, ChevronDown, AlertTriangle, Play } from "lucide-react";
+import { Network, RefreshCw, Search, Server, ShieldCheck, Terminal, Activity, ChevronRight, ChevronDown, AlertTriangle, Play, Download, FileJson, FileText } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router";
 import { toast } from "sonner";
@@ -103,6 +103,18 @@ export default function Discovery() {
     }
   };
 
+  const downloadArtifact = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -181,21 +193,35 @@ export default function Discovery() {
             </Card>
           )}
 
-          {project?.platform && (
-            <div className="bg-muted/50 border rounded-lg p-4 flex items-center gap-4 animate-in fade-in slide-in-from-top-2">
-              <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-600 dark:text-green-400">
-                <ShieldCheck className="h-6 w-6" />
-              </div>
-              <div>
-                <h4 className="font-semibold text-sm">Platform Identified</h4>
-                <p className="text-sm text-muted-foreground">
-                  Successfully mapped <span className="font-medium text-foreground">{project.platform}</span> infrastructure.
-                </p>
-              </div>
-              <div className="ml-auto text-xs text-muted-foreground font-mono bg-background px-2 py-1 rounded border">
-                CONFIDENCE: 98.5%
-              </div>
-            </div>
+          {/* Artifacts Panel */}
+          {job?.status === "completed" && job.artifacts && (
+            <Card className="border-green-500/20 bg-green-50/10 animate-in fade-in slide-in-from-top-2">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                  <ShieldCheck className="h-5 w-5" />
+                  <CardTitle className="text-base">Discovery Complete</CardTitle>
+                </div>
+                <CardDescription>
+                  Successfully mapped {project?.platform || "system"}. Artifacts generated.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => downloadArtifact(job.artifacts!.graph, "graph.json")}>
+                    <Network className="h-6 w-6 text-blue-500" />
+                    <span className="text-xs">Graph Model</span>
+                  </Button>
+                  <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => downloadArtifact(job.artifacts!.report, "crawl_report.json")}>
+                    <FileText className="h-6 w-6 text-orange-500" />
+                    <span className="text-xs">Crawl Report</span>
+                  </Button>
+                  <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => downloadArtifact(job.artifacts!.testCases, "test_cases.json")}>
+                    <FileJson className="h-6 w-6 text-green-500" />
+                    <span className="text-xs">Test Cases</span>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           )}
 
           <div className="grid gap-4">
@@ -280,11 +306,18 @@ function FlowTree({ nodes, parentId = undefined, level = 0 }: { nodes: any[], pa
               </span>
             </div>
             <p className="text-xs text-muted-foreground line-clamp-2 italic">"{node.content}"</p>
-            {node.metadata?.dtmf && (
-               <div className="mt-2 text-[10px] font-mono bg-muted inline-block px-1.5 py-0.5 rounded">
-                 DTMF: {node.metadata.dtmf}
-               </div>
-            )}
+            <div className="flex gap-2 mt-2">
+              {node.metadata?.dtmf && (
+                 <div className="text-[10px] font-mono bg-muted inline-block px-1.5 py-0.5 rounded">
+                   DTMF: {node.metadata.dtmf}
+                 </div>
+              )}
+              {node.metadata?.confidence && (
+                 <div className="text-[10px] font-mono bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 inline-block px-1.5 py-0.5 rounded">
+                   CONF: {(node.metadata.confidence * 100).toFixed(0)}%
+                 </div>
+              )}
+            </div>
           </div>
           <FlowTree nodes={nodes} parentId={node._id} level={level + 1} />
         </div>
