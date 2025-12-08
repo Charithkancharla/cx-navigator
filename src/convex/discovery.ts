@@ -44,19 +44,22 @@ const curatedCatalog: CuratedIVR[] = [
       {
         label: "English",
         type: "menu",
-        content: "Press 1 for balances, press 2 for recent activity, or press 0 to reach a banker.",
+        content:
+          "Press 1 for balances, press 2 for recent activity, or press 0 to reach a banker.",
         metadata: { dtmf: "1", confidence: 0.98 },
         children: [
           {
             label: "Balance Inquiry",
             type: "prompt",
-            content: "Please enter your 16 digit account number followed by the pound key.",
+            content:
+              "Please enter your 16 digit account number followed by the pound key.",
             metadata: { dtmf: "1", confidence: 0.95 },
           },
           {
             label: "Recent Transactions",
             type: "prompt",
-            content: "Say 'transactions' or press 2 to hear your last five transactions.",
+            content:
+              "Say 'transactions' or press 2 to hear your last five transactions.",
             metadata: { dtmf: "2", intent: "transactions", confidence: 0.94 },
           },
         ],
@@ -66,7 +69,7 @@ const curatedCatalog: CuratedIVR[] = [
         type: "prompt",
         content: "Gracias. Por favor espere un momento.",
         metadata: { dtmf: "2", confidence: 0.99 },
-      }
+      },
     ],
   },
 ];
@@ -81,14 +84,16 @@ function normalizeEntryPoint(value: string): string {
 
 function generateSimulatedFlow(value: string): CuratedIVR {
   const normalized = normalizeEntryPoint(value);
-  const hash = normalized.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  
+  const hash = normalized
+    .split("")
+    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+
   const platforms = ["Amazon Connect", "Genesys Cloud CX", "Twilio Flex", "Nice CXone"];
   const industries = ["Retail", "Banking", "Healthcare", "Travel"];
-  
+
   const platform = platforms[hash % platforms.length];
   const industry = industries[hash % industries.length];
-  
+
   return {
     id: `ivr_${normalized}`,
     entryPoints: [value],
@@ -111,10 +116,11 @@ function generateSimulatedFlow(value: string): CuratedIVR {
           {
             label: "Speak to Agent",
             type: "prompt",
-            content: "Please hold while we connect you to the next available agent.",
+            content:
+              "Please hold while we connect you to the next available agent.",
             metadata: { dtmf: "0", confidence: 0.99 },
-          }
-        ]
+          },
+        ],
       },
       {
         label: "Technical Support",
@@ -127,16 +133,16 @@ function generateSimulatedFlow(value: string): CuratedIVR {
             type: "prompt",
             content: "Please describe the issue you are experiencing.",
             metadata: { dtmf: "1", intent: "troubleshoot", confidence: 0.92 },
-          }
-        ]
+          },
+        ],
       },
       {
         label: "Billing",
         type: "prompt",
         content: "For billing questions, press 3.",
         metadata: { dtmf: "3", confidence: 0.96 },
-      }
-    ]
+      },
+    ],
   };
 }
 
@@ -148,7 +154,7 @@ function parseTranscriptFlow(text: string): CuratedIVR {
       label: match[2].trim(),
       type: "prompt",
       content: `(Simulated) You selected ${match[2].trim()}.`,
-      metadata: { dtmf: match[1], confidence: 1.0 }
+      metadata: { dtmf: match[1], confidence: 1.0 },
     });
   }
   return {
@@ -157,7 +163,7 @@ function parseTranscriptFlow(text: string): CuratedIVR {
     platform: "Text Transcript",
     industry: "Unknown",
     welcome: text,
-    branches: branches
+    branches: branches,
   };
 }
 
@@ -174,18 +180,20 @@ function fingerprintPrompt(text: string): string {
   if (normalized.length === 0) return "empty";
   for (let i = 0; i < normalized.length; i++) {
     const char = normalized.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
+    hash = (hash << 5) - hash + char;
     hash = hash & hash; // Convert to 32bit integer
   }
   return `v1:${Math.abs(hash).toString(16)}`;
 }
 
-function extractMenuOptions(text: string): { dtmf: string; label: string }[] {
+function extractMenuOptions(
+  text: string
+): { dtmf: string; label: string }[] {
   const options: { dtmf: string; label: string }[] = [];
   // Regex to find "Press X for Y" or "For Y, press X"
   const patterns = [
     /Press (\d) for ([^.,;]+)/gi,
-    /For ([^.,;]+),? press (\d)/gi
+    /For ([^.,;]+),? press (\d)/gi,
   ];
 
   for (const pattern of patterns) {
@@ -204,9 +212,111 @@ function extractMenuOptions(text: string): { dtmf: string; label: string }[] {
   return options;
 }
 
-// --- Simulated Telephony Adapter --- //
+// --- Telephony Abstraction (Interface + Factory + Implementations) --- //
 
-class SimulatedTelephonySession {
+interface TelephonySession {
+  dial(): Promise<AudioProcessingResult>;
+  sendDtmf(digit: string): Promise<AudioProcessingResult>;
+  hangup(): Promise<void>;
+}
+
+// Backend service that actually talks to Twilio / Connect / SIP / etc.
+const TELEPHONY_BACKEND_URL = process.env.TELEPHONY_BACKEND_URL ?? "";
+
+/**
+ * Real telephony session: talks to a separate backend that:
+ *  - places the call
+ *  - listens to prompts
+ *  - runs ASR
+ *  - returns AudioProcessingResult JSON
+ */
+class RealTelephonySession implements TelephonySession {
+  private callId: string | null = null;
+  private endpoint: string;
+
+  constructor(endpoint: string) {
+    if (!TELEPHONY_BACKEND_URL) {
+      throw new Error(
+        "TELEPHONY_BACKEND_URL is not configured for RealTelephonySession"
+      );
+    }
+    this.endpoint = endpoint;
+  }
+
+  async dial(): Promise<AudioProcessingResult> {
+    const res = await fetch(`${TELEPHONY_BACKEND_URL}/dial`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: this.endpoint }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Dial failed with status ${res.status}`);
+    }
+
+    const data = await res.json();
+    this.callId = data.callId;
+
+    return {
+      transcript: data.transcript,
+      confidence: data.confidence,
+      audioUrl: data.audioUrl,
+      durationMs: data.durationMs,
+      detectedDtmf: data.detectedDtmf,
+    };
+  }
+
+  async sendDtmf(digit: string): Promise<AudioProcessingResult> {
+    if (!this.callId) {
+      throw new Error("Call not connected");
+    }
+
+    const res = await fetch(`${TELEPHONY_BACKEND_URL}/send-dtmf`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callId: this.callId, digit }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`sendDtmf failed with status ${res.status}`);
+    }
+
+    const data = await res.json();
+
+    return {
+      transcript: data.transcript,
+      confidence: data.confidence,
+      audioUrl: data.audioUrl,
+      durationMs: data.durationMs,
+      detectedDtmf: data.detectedDtmf,
+    };
+  }
+
+  async hangup(): Promise<void> {
+    if (!this.callId) return;
+
+    try {
+      await fetch(`${TELEPHONY_BACKEND_URL}/hangup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ callId: this.callId }),
+      });
+    } catch {
+      // best-effort; ignore errors on hangup
+    } finally {
+      this.callId = null;
+    }
+  }
+}
+
+/**
+ * Existing simulator, now implementing TelephonySession.
+ * Used for:
+ *  - text inputType (full transcript)
+ *  - non-phone/non-SIP endpoints
+ *  - dev/demo fallback
+ */
+class SimulatedTelephonySession implements TelephonySession {
   private flow: CuratedIVR;
   private currentNode: FlowNode | null = null;
   private isConnected: boolean = false;
@@ -216,8 +326,10 @@ class SimulatedTelephonySession {
       this.flow = parseTranscriptFlow(entryPoint);
     } else {
       const normalized = normalizeEntryPoint(entryPoint);
-      this.flow = curatedCatalog.find(c => c.entryPoints.some(e => normalizeEntryPoint(e) === normalized)) 
-        ?? generateSimulatedFlow(entryPoint);
+      this.flow =
+        curatedCatalog.find((c) =>
+          c.entryPoints.some((e) => normalizeEntryPoint(e) === normalized)
+        ) ?? generateSimulatedFlow(entryPoint);
     }
   }
 
@@ -229,18 +341,18 @@ class SimulatedTelephonySession {
 
   async sendDtmf(digit: string): Promise<AudioProcessingResult> {
     if (!this.isConnected) throw new Error("Call not connected");
-    
+
     // Traverse logic
     let children = this.currentNode ? this.currentNode.children : this.flow.branches;
-    
+
     if (!children) return this.processAudio("Invalid option.");
 
-    const match = children.find(c => c.metadata?.dtmf === digit);
+    const match = children.find((c) => c.metadata?.dtmf === digit);
     if (match) {
       this.currentNode = match;
       return this.processAudio(match.content);
     }
-    
+
     return this.processAudio("Invalid selection. Please try again.");
   }
 
@@ -255,17 +367,46 @@ class SimulatedTelephonySession {
     // 1. Fetch audio stream
     // 2. Send to ASR service (Google/AWS/Deepgram)
     // 3. Return transcript + confidence + audio URL
-    
-    const confidence = 0.85 + (Math.random() * 0.14); // Random confidence 0.85 - 0.99
+
+    const confidence = 0.85 + Math.random() * 0.14; // Random confidence 0.85 - 0.99
     const duration = text.length * 50; // Approx 50ms per character
-    
+
     return {
       transcript: text,
       confidence,
-      audioUrl: `https://s3.amazonaws.com/simulated-audio/${Math.random().toString(36).substring(7)}.mp3`,
-      durationMs: duration
+      audioUrl: `https://s3.amazonaws.com/simulated-audio/${Math.random()
+        .toString(36)
+        .substring(7)}.mp3`,
+      durationMs: duration,
     };
   }
+}
+
+/**
+ * Factory: choose which TelephonySession to use based on entryPoint + inputType.
+ *  - inputType === "text"       → transcript-based simulation
+ *  - phone number or sip: URI   → real telephony
+ *  - everything else            → simulated IVR (catalog / generated)
+ */
+function createTelephonySession(
+  entryPoint: string,
+  inputType?: string
+): TelephonySession {
+  if (inputType === "text") {
+    return new SimulatedTelephonySession(entryPoint, "text");
+  }
+
+  const ep = entryPoint.trim().toLowerCase();
+  const looksLikePhone =
+    /^(\+?\d{6,})$/.test(ep) || ep.startsWith("tel:");
+  const looksLikeSip = ep.startsWith("sip:");
+
+  if (looksLikePhone || looksLikeSip) {
+    return new RealTelephonySession(entryPoint);
+  }
+
+  // Fallback to simulated IVR for unknown endpoints
+  return new SimulatedTelephonySession(entryPoint, inputType);
 }
 
 // --- Internal Mutations --- //
@@ -345,11 +486,13 @@ export const completeJob = internalMutation({
     projectId: v.id("projects"),
     platform: v.string(),
     status: v.string(),
-    artifacts: v.optional(v.object({
-      graph: v.string(),
-      report: v.string(),
-      testCases: v.string(),
-    })),
+    artifacts: v.optional(
+      v.object({
+        graph: v.string(),
+        report: v.string(),
+        testCases: v.string(),
+      })
+    ),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.jobId, {
@@ -407,37 +550,24 @@ export const continueDiscovery = action({
     }
 
     const stack = JSON.parse(job.resumeState);
-    // Append the user input to the last path in the stack to "take" that edge
     if (stack.length > 0) {
       const lastState = stack[stack.length - 1];
-      // We assume the last state was waiting for input, so we add the input to its path
-      // Actually, we need to push a NEW state that represents taking that input
-      // But for simplicity in this DFS, we'll just assume the input is the next DTMF/Intent
-      // and we need to explore it.
-      
-      // In a real DFS, we would have popped the node, found it needed input, and paused.
-      // So we need to push the next step.
-      // For this simulation, we'll just log it and re-trigger runDiscovery with a special flag or just
-      // call the internal logic. 
-      
-      // To keep it simple: We will just restart the runDiscovery logic but initialize the stack 
-      // with the resumed state + the new input.
-      
-      // However, runDiscovery is self-contained. Let's call runDiscovery with the resume state.
-      // We need to update runDiscovery to accept an optional initialStack.
+      // Apply the manual input to the last path
+      stack[stack.length - 1] = {
+        ...lastState,
+        path: [...lastState.path, args.input],
+      };
     }
-    
-    // For now, we will just call runDiscovery again. 
-    // NOTE: This is a simplification. A real engine would need robust state hydration.
+
     await ctx.runAction(api.discovery.runDiscovery, {
       jobId: args.jobId,
       projectId: args.projectId,
       entryPoint: job.entryPoint,
       inputType: job.inputType,
       resumeInput: args.input,
-      resumeStack: job.resumeState
+      resumeStack: JSON.stringify(stack),
     });
-  }
+  },
 });
 
 export const runDiscovery = action({
@@ -450,31 +580,35 @@ export const runDiscovery = action({
     resumeStack: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { jobId, projectId, entryPoint, inputType, resumeInput, resumeStack } = args;
+    const { jobId, projectId, entryPoint, inputType, resumeInput, resumeStack } =
+      args;
 
     const log = async (msg: string, type: string = "info") => {
-      await ctx.runMutation(internal.discovery.writeLog, { jobId, message: msg, type });
+      await ctx.runMutation(internal.discovery.writeLog, {
+        jobId,
+        message: msg,
+        type,
+      });
     };
 
     try {
       await log(`Starting Graph-Based Discovery for ${entryPoint}...`);
-      
+
       // 1. Initialize State
       const visitedFingerprints = new Map<string, Id<"ivr_nodes">>(); // Map fingerprint -> nodeId
       const maxDepth = 5;
-      
+
       // Stack for Iterative DFS
-      // Each item is a path to explore
-      let stack: { path: string[]; parentId?: Id<"ivr_nodes">; depth: number }[] = [];
-      
+      let stack: { path: string[]; parentId?: Id<"ivr_nodes">; depth: number }[] =
+        [];
+
       if (resumeStack) {
         stack = JSON.parse(resumeStack);
         await log("Resuming from saved state...", "info");
         if (resumeInput && stack.length > 0) {
-           // Add the input to the current path we are exploring
-           const current = stack.pop()!;
-           stack.push({ ...current, path: [...current.path, resumeInput] });
-           await log(`Applied manual input: ${resumeInput}`);
+          const current = stack.pop()!;
+          stack.push({ ...current, path: [...current.path, resumeInput] });
+          await log(`Applied manual input: ${resumeInput}`);
         }
       } else {
         stack.push({ path: [], parentId: undefined, depth: 0 });
@@ -486,7 +620,7 @@ export const runDiscovery = action({
         nodesDiscovered: 0,
         loopsDetected: 0,
         maxDepthReached: 0,
-        errors: 0
+        errors: 0,
       };
 
       // 2. Iterative DFS Loop
@@ -497,13 +631,13 @@ export const runDiscovery = action({
           await log(`Max depth (${maxDepth}) reached. Pruning branch.`, "debug");
           continue;
         }
-        
+
         metrics.maxDepthReached = Math.max(metrics.maxDepthReached, depth);
 
-        // A. Dial and Navigate (Replay Path)
-        const session = new SimulatedTelephonySession(entryPoint, inputType);
+        // A. Dial and Navigate (Replay Path) using dynamic session
+        const session = createTelephonySession(entryPoint, inputType);
         let result = await session.dial();
-        
+
         // Replay DTMFs to reach current state
         for (const digit of path) {
           result = await session.sendDtmf(digit);
@@ -512,8 +646,12 @@ export const runDiscovery = action({
         // B. Fingerprint & Loop Detection
         const fingerprint = fingerprintPrompt(result.transcript);
         const isLoop = visitedFingerprints.has(fingerprint);
-        
-        await log(`[Depth ${depth}] Reached node. Confidence: ${(result.confidence * 100).toFixed(1)}%`);
+
+        await log(
+          `[Depth ${depth}] Reached node. Confidence: ${(result.confidence * 100).toFixed(
+            1
+          )}%`
+        );
 
         // C. Save Node
         const nodeId = await ctx.runMutation(internal.discovery.insertNode, {
@@ -522,12 +660,12 @@ export const runDiscovery = action({
           type: depth === 0 ? "menu" : "prompt",
           label: depth === 0 ? "Main Menu" : `Option ${path[path.length - 1]}`,
           content: result.transcript,
-          metadata: { 
-            path: path.join(">"), 
+          metadata: {
+            path: path.join(">"),
             confidence: result.confidence,
             audioUrl: result.audioUrl,
             durationMs: result.durationMs,
-            dtmf: path.length > 0 ? path[path.length - 1] : undefined
+            dtmf: path.length > 0 ? path[path.length - 1] : undefined,
           },
           fingerprint,
           isLoop,
@@ -539,6 +677,7 @@ export const runDiscovery = action({
         if (isLoop) {
           metrics.loopsDetected++;
           await log(`Loop detected back to node. Stopping branch.`);
+          await session.hangup();
           continue;
         }
 
@@ -547,71 +686,87 @@ export const runDiscovery = action({
 
         // D. Extract Options & Recurse
         const options = extractMenuOptions(result.transcript);
-        
+
         if (options.length > 0) {
-          await log(`Found ${options.length} options: ${options.map(o => o.dtmf).join(", ")}`);
-          
+          await log(
+            `Found ${options.length} options: ${options
+              .map((o) => o.dtmf)
+              .join(", ")}`
+          );
+
           // Simulate delay for realism
-          await new Promise(r => setTimeout(r, 500));
+          await new Promise((r) => setTimeout(r, 500));
 
           // Push options to stack (reverse order to process 1 first if using pop)
           for (let i = options.length - 1; i >= 0; i--) {
-            stack.push({ 
-              path: [...path, options[i].dtmf], 
-              parentId: nodeId, 
-              depth: depth + 1 
+            stack.push({
+              path: [...path, options[i].dtmf],
+              parentId: nodeId,
+              depth: depth + 1,
             });
           }
+
+          await session.hangup();
         } else {
           // Check if we need manual input (Simulated logic: if text contains "enter" or "pin" and no options found)
-          if (result.transcript.toLowerCase().includes("enter") && options.length === 0) {
-             await log("Node requires input. Pausing for human intervention.", "warning");
-             
-             // Save state and pause
-             // We push the current state back but without the input (so we are at the node)
-             // Actually, we want to resume by TAKING an action from this node.
-             // So we save the stack as is, but we need to know WHICH node we are at.
-             // The stack currently contains other branches to explore.
-             // We need to add THIS branch back to the stack so when we resume we continue from here.
-             stack.push({ path, parentId, depth }); 
-             
-             await ctx.runMutation(internal.discovery.setWaiting, {
-               jobId,
-               waitingFor: "PIN/ID",
-               resumeState: JSON.stringify(stack)
-             });
-             return; // Exit action, wait for resume
+          if (
+            result.transcript.toLowerCase().includes("enter") &&
+            options.length === 0
+          ) {
+            await log("Node requires input. Pausing for human intervention.", "warning");
+
+            // Save state and pause
+            stack.push({ path, parentId, depth });
+
+            await session.hangup();
+
+            await ctx.runMutation(internal.discovery.setWaiting, {
+              jobId,
+              waitingFor: "PIN/ID",
+              resumeState: JSON.stringify(stack),
+            });
+            return; // Exit action, wait for resume
           }
-          
+
           await log("No further options found. Leaf node.");
+          await session.hangup();
         }
-        
-        await session.hangup();
       }
 
       // 3. Generate Artifacts
       await log("Generating artifacts...");
-      
+
       // Graph JSON
       const nodes = await ctx.runQuery(api.discovery.getNodes, { projectId });
       const graphJson = JSON.stringify({ nodes, edges: [] }, null, 2); // Simplified graph
-      
+
       // Report JSON
-      const reportJson = JSON.stringify({
-        jobId,
-        entryPoint,
-        platform: "Simulated/Discovered",
-        metrics: {
-          ...metrics,
-          duration: Date.now() - metrics.startTime,
-          totalNodes: nodes.length
+      const reportJson = JSON.stringify(
+        {
+          jobId,
+          entryPoint,
+          platform: "Simulated/Discovered",
+          metrics: {
+            ...metrics,
+            duration: Date.now() - metrics.startTime,
+            totalNodes: nodes.length,
+          },
+          timestamp: new Date().toISOString(),
         },
-        timestamp: new Date().toISOString()
-      }, null, 2);
-      
+        null,
+        2
+      );
+
       // Test Cases JSON (Generate them)
-      const testGenResult = await ctx.runMutation(internal.testCases.generateInternal, { projectId });
-      const testCasesJson = JSON.stringify(testGenResult.generatedTests || [], null, 2);
+      const testGenResult = await ctx.runMutation(
+        internal.testCases.generateInternal,
+        { projectId }
+      );
+      const testCasesJson = JSON.stringify(
+        testGenResult.generatedTests || [],
+        null,
+        2
+      );
 
       await log("Graph traversal complete.");
       await ctx.runMutation(internal.discovery.completeJob, {
@@ -622,10 +777,9 @@ export const runDiscovery = action({
         artifacts: {
           graph: graphJson,
           report: reportJson,
-          testCases: testCasesJson
-        }
+          testCases: testCasesJson,
+        },
       });
-
     } catch (error: any) {
       await log(`Critical Failure: ${error.message}`, "error");
       await ctx.runMutation(internal.discovery.completeJob, {
