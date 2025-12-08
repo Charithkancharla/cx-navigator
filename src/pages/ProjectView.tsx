@@ -7,9 +7,15 @@ import { Outlet, useParams } from "react-router";
 
 export default function ProjectView() {
   const { projectId } = useParams();
-  const project = useQuery(api.projects.get, { 
-    id: projectId as Id<"projects"> 
-  });
+  const project = useQuery(api.projects.get, 
+    projectId && projectId !== ":projectId" 
+      ? { id: projectId as Id<"projects"> } 
+      : "skip"
+  );
+
+  if (!projectId || projectId === ":projectId") {
+    return <div className="flex h-screen items-center justify-center text-muted-foreground">Invalid Project ID</div>;
+  }
 
   if (project === undefined) {
     return (

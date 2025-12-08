@@ -15,8 +15,16 @@ import { Textarea } from "@/components/ui/textarea";
 
 export default function Discovery() {
   const { projectId } = useParams();
-  const project = useQuery(api.projects.get, { id: projectId as Id<"projects"> });
-  const nodes = useQuery(api.discovery.getNodes, { projectId: projectId as Id<"projects"> });
+  const project = useQuery(api.projects.get, 
+    projectId && projectId !== ":projectId" 
+      ? { id: projectId as Id<"projects"> } 
+      : "skip"
+  );
+  const nodes = useQuery(api.discovery.getNodes, 
+    projectId && projectId !== ":projectId" 
+      ? { projectId: projectId as Id<"projects"> } 
+      : "skip"
+  );
   
   const createJob = useMutation(api.discovery.createJob);
   const runDiscovery = useAction(api.discovery.runDiscovery);

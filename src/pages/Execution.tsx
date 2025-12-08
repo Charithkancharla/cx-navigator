@@ -11,7 +11,11 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 
 export default function Execution() {
   const { projectId } = useParams();
-  const runs = useQuery(api.execution.getRuns, { projectId: projectId as Id<"projects"> });
+  const runs = useQuery(api.execution.getRuns, 
+    projectId && projectId !== ":projectId" 
+      ? { projectId: projectId as Id<"projects"> } 
+      : "skip"
+  );
   const [selectedRunId, setSelectedRunId] = useState<Id<"test_runs"> | null>(null);
 
   return (

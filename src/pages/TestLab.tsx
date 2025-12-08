@@ -16,7 +16,11 @@ import { Textarea } from "@/components/ui/textarea";
 
 export default function TestLab() {
   const { projectId } = useParams();
-  const testCases = useQuery(api.testCases.list, { projectId: projectId as Id<"projects"> });
+  const testCases = useQuery(api.testCases.list, 
+    projectId && projectId !== ":projectId" 
+      ? { projectId: projectId as Id<"projects"> } 
+      : "skip"
+  );
   const generate = useMutation(api.testCases.generateFromNodes);
   const createTestCase = useMutation(api.testCases.create);
   const runTest = useMutation(api.execution.runTest);
