@@ -50,6 +50,12 @@ const schema = defineSchema(
       startTime: v.number(),
       endTime: v.optional(v.number()),
       waitingFor: v.optional(v.string()), // What input we are waiting for (e.g. "pin", "otp")
+      resumeState: v.optional(v.string()), // JSON string of the DFS stack for resuming
+      artifacts: v.optional(v.object({
+        graph: v.string(), // JSON string of the graph model
+        report: v.string(), // JSON string of the crawl report
+        testCases: v.string(), // JSON string of the generated test cases
+      })),
     }).index("by_project", ["projectId"]),
 
     discovery_logs: defineTable({
