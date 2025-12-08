@@ -30,120 +30,12 @@ type AudioProcessingResult = {
   detectedDtmf?: string;
 };
 
-// --- Simulation Data (The "Oracle") --- //
-
-const curatedCatalog: CuratedIVR[] = [
-  {
-    id: "amazon_connect_horizon_bank",
-    entryPoints: ["+18005550199", "horizon"],
-    platform: "Amazon Connect",
-    industry: "Banking",
-    welcome:
-      "Thank you for calling Horizon Federal, powered by Amazon Connect. For English, press 1. Para español, oprima número dos.",
-    branches: [
-      {
-        label: "English",
-        type: "menu",
-        content:
-          "Press 1 for balances, press 2 for recent activity, or press 0 to reach a banker.",
-        metadata: { dtmf: "1", confidence: 0.98 },
-        children: [
-          {
-            label: "Balance Inquiry",
-            type: "prompt",
-            content:
-              "Please enter your 16 digit account number followed by the pound key.",
-            metadata: { dtmf: "1", confidence: 0.95 },
-          },
-          {
-            label: "Recent Transactions",
-            type: "prompt",
-            content:
-              "Say 'transactions' or press 2 to hear your last five transactions.",
-            metadata: { dtmf: "2", intent: "transactions", confidence: 0.94 },
-          },
-        ],
-      },
-      {
-        label: "Spanish",
-        type: "prompt",
-        content: "Gracias. Por favor espere un momento.",
-        metadata: { dtmf: "2", confidence: 0.99 },
-      },
-    ],
-  },
-];
-
 // --- Helper Functions --- //
 
 function normalizeEntryPoint(value: string): string {
   let normalized = value.trim().toLowerCase();
   normalized = normalized.replace(/[^0-9+a-z:]/g, "");
   return normalized;
-}
-
-function generateSimulatedFlow(value: string): CuratedIVR {
-  const normalized = normalizeEntryPoint(value);
-  const hash = normalized
-    .split("")
-    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
-
-  const platforms = ["Amazon Connect", "Genesys Cloud CX", "Twilio Flex", "Nice CXone"];
-  const industries = ["Retail", "Banking", "Healthcare", "Travel"];
-
-  const platform = platforms[hash % platforms.length];
-  const industry = industries[hash % industries.length];
-
-  return {
-    id: `ivr_${normalized}`,
-    entryPoints: [value],
-    platform,
-    industry,
-    welcome: `Thank you for calling the ${industry} Support Center. This call is powered by ${platform}. Please listen closely as our menu options have changed.`,
-    branches: [
-      {
-        label: "Customer Service",
-        type: "menu",
-        content: "For customer service and general inquiries, press 1.",
-        metadata: { dtmf: "1", confidence: 0.98 },
-        children: [
-          {
-            label: "Order Status",
-            type: "prompt",
-            content: "Please enter your order number followed by the pound key.",
-            metadata: { dtmf: "1", confidence: 0.95 },
-          },
-          {
-            label: "Speak to Agent",
-            type: "prompt",
-            content:
-              "Please hold while we connect you to the next available agent.",
-            metadata: { dtmf: "0", confidence: 0.99 },
-          },
-        ],
-      },
-      {
-        label: "Technical Support",
-        type: "menu",
-        content: "For technical support or to report an outage, press 2.",
-        metadata: { dtmf: "2", confidence: 0.97 },
-        children: [
-          {
-            label: "Troubleshooting",
-            type: "prompt",
-            content: "Please describe the issue you are experiencing.",
-            metadata: { dtmf: "1", intent: "troubleshoot", confidence: 0.92 },
-          },
-        ],
-      },
-      {
-        label: "Billing",
-        type: "prompt",
-        content: "For billing questions, press 3.",
-        metadata: { dtmf: "3", confidence: 0.96 },
-      },
-    ],
-  };
 }
 
 function parseTranscriptFlow(text: string): CuratedIVR {
@@ -163,7 +55,7 @@ function parseTranscriptFlow(text: string): CuratedIVR {
     platform: "Text Transcript",
     industry: "Unknown",
     welcome: text,
-    branches: branches,
+    branches,
   };
 }
 
@@ -174,32 +66,35 @@ function normalizeText(text: string): string {
 }
 
 function fingerprintPrompt(text: string): string {
-  // Enhanced fingerprinting with versioning
   let hash = 0;
   const normalized = normalizeText(text);
   if (normalized.length === 0) return "empty";
   for (let i = 0; i < normalized.length; i++) {
     const char = normalized.charCodeAt(i);
     hash = (hash << 5) - hash + char;
-    hash = hash & hash; // Convert to 32bit integer
+    hash = hash & hash;
   }
   return `v1:${Math.abs(hash).toString(16)}`;
 }
 
-function extractMenuOptions(
-  text: string
-): { dtmf: string; label: string }[] {
+function extractMenuOptions(text: string): { dtmf: string; label: string }[] {
   const options: { dtmf: string; label: string }[] = [];
-  // Regex to find "Press X for Y" or "For Y, press X"
+
+  // Try to catch common IVR phrases:
+  // - "Press 1 for Billing"
+  // - "For Billing, press 1"
+  // - "To check your balance, press 1"
+  // - "Press or say 1 for Billing"
   const patterns = [
-    /Press (\d) for ([^.,;]+)/gi,
-    /For ([^.,;]+),? press (\d)/gi,
+    /Press\s+(\d)\s+(?:for|to)\s+([^.,;]+)/gi,
+    /For\s+([^.,;]+?),?\s+press\s+(\d)/gi,
+    /To\s+([^.,;]+?),?\s+press\s+(\d)/gi,
+    /Press\s+or\s+say\s+(\d)\s+for\s+([^.,;]+)/gi,
   ];
 
   for (const pattern of patterns) {
     const matches = text.matchAll(pattern);
     for (const match of matches) {
-      // Determine which group is digit and which is label
       const g1 = match[1];
       const g2 = match[2];
       if (/\d/.test(g1)) {
@@ -209,6 +104,7 @@ function extractMenuOptions(
       }
     }
   }
+
   return options;
 }
 
@@ -302,7 +198,7 @@ class RealTelephonySession implements TelephonySession {
         body: JSON.stringify({ callId: this.callId }),
       });
     } catch {
-      // best-effort; ignore errors on hangup
+      // best-effort
     } finally {
       this.callId = null;
     }
@@ -310,42 +206,44 @@ class RealTelephonySession implements TelephonySession {
 }
 
 /**
- * Existing simulator, now implementing TelephonySession.
- * Used for:
- *  - text inputType (full transcript)
- *  - non-phone/non-SIP endpoints
- *  - dev/demo fallback
+ * Simple simulator used ONLY when:
+ *  - inputType === "text" (user pasted transcript)
+ *  - inputType === "simulated" (explicit dev mode)
  */
 class SimulatedTelephonySession implements TelephonySession {
   private flow: CuratedIVR;
   private currentNode: FlowNode | null = null;
-  private isConnected: boolean = false;
+  private isConnected = false;
 
   constructor(entryPoint: string, inputType?: string) {
     if (inputType === "text") {
       this.flow = parseTranscriptFlow(entryPoint);
     } else {
-      const normalized = normalizeEntryPoint(entryPoint);
-      this.flow =
-        curatedCatalog.find((c) =>
-          c.entryPoints.some((e) => normalizeEntryPoint(e) === normalized)
-        ) ?? generateSimulatedFlow(entryPoint);
+      // minimal generic wrapper for simulated mode
+      this.flow = {
+        id: "simulated_text",
+        entryPoints: [entryPoint],
+        platform: "Simulated",
+        industry: "Unknown",
+        welcome: entryPoint,
+        branches: [],
+      };
     }
   }
 
   async dial(): Promise<AudioProcessingResult> {
     this.isConnected = true;
-    // Start at root
     return this.processAudio(this.flow.welcome);
   }
 
   async sendDtmf(digit: string): Promise<AudioProcessingResult> {
     if (!this.isConnected) throw new Error("Call not connected");
 
-    // Traverse logic
     let children = this.currentNode ? this.currentNode.children : this.flow.branches;
 
-    if (!children) return this.processAudio("Invalid option.");
+    if (!children || children.length === 0) {
+      return this.processAudio("Invalid option.");
+    }
 
     const match = children.find((c) => c.metadata?.dtmf === digit);
     if (match) {
@@ -361,20 +259,14 @@ class SimulatedTelephonySession implements TelephonySession {
     this.currentNode = null;
   }
 
-  // Simulate Real Audio Processing (ASR/TTS)
   private processAudio(text: string): AudioProcessingResult {
-    // In a real implementation, this would:
-    // 1. Fetch audio stream
-    // 2. Send to ASR service (Google/AWS/Deepgram)
-    // 3. Return transcript + confidence + audio URL
-
-    const confidence = 0.85 + Math.random() * 0.14; // Random confidence 0.85 - 0.99
-    const duration = text.length * 50; // Approx 50ms per character
+    const confidence = 0.9;
+    const duration = text.length * 50;
 
     return {
       transcript: text,
       confidence,
-      audioUrl: `https://s3.amazonaws.com/simulated-audio/${Math.random()
+      audioUrl: `https://example.com/simulated/${Math.random()
         .toString(36)
         .substring(7)}.mp3`,
       durationMs: duration,
@@ -384,29 +276,29 @@ class SimulatedTelephonySession implements TelephonySession {
 
 /**
  * Factory: choose which TelephonySession to use based on entryPoint + inputType.
+ *
  *  - inputType === "text"       → transcript-based simulation
- *  - phone number or sip: URI   → real telephony
- *  - everything else            → simulated IVR (catalog / generated)
+ *  - inputType === "simulated"  → simulated dev mode
+ *  - phone number or sip: URI   → real telephony (ALWAYS)
  */
 function createTelephonySession(
   entryPoint: string,
-  inputType?: string
+  inputType: string | undefined
 ): TelephonySession {
-  if (inputType === "text") {
-    return new SimulatedTelephonySession(entryPoint, "text");
+  if (inputType === "text" || inputType === "simulated") {
+    return new SimulatedTelephonySession(entryPoint, inputType);
   }
 
-  const ep = entryPoint.trim().toLowerCase();
-  const looksLikePhone =
-    /^(\+?\d{6,})$/.test(ep) || ep.startsWith("tel:");
-  const looksLikeSip = ep.startsWith("sip:");
+  const ep = normalizeEntryPoint(entryPoint);
+  const looksLikePhone = /^(\+?\d{6,})$/.test(ep) || ep.startsWith("tel");
+  const looksLikeSip = ep.startsWith("sip");
 
   if (looksLikePhone || looksLikeSip) {
     return new RealTelephonySession(entryPoint);
   }
 
-  // Fallback to simulated IVR for unknown endpoints
-  return new SimulatedTelephonySession(entryPoint, inputType);
+  // Default: treat unknown formats as real to avoid silently simulating
+  return new RealTelephonySession(entryPoint);
 }
 
 // --- Internal Mutations --- //
@@ -415,7 +307,7 @@ export const createJob = mutation({
   args: {
     projectId: v.id("projects"),
     entryPoint: v.string(),
-    inputType: v.optional(v.string()),
+    inputType: v.optional(v.string()), // "text" | "simulated" | undefined
   },
   handler: async (ctx, args) => {
     // Clear existing nodes for a fresh discovery
@@ -552,7 +444,6 @@ export const continueDiscovery = action({
     const stack = JSON.parse(job.resumeState);
     if (stack.length > 0) {
       const lastState = stack[stack.length - 1];
-      // Apply the manual input to the last path
       stack[stack.length - 1] = {
         ...lastState,
         path: [...lastState.path, args.input],
@@ -592,13 +483,13 @@ export const runDiscovery = action({
     };
 
     try {
-      await log(`Starting Graph-Based Discovery for ${entryPoint}...`);
+      await log(
+        `Starting Graph-Based Discovery for ${entryPoint} (inputType=${inputType ?? "none"})...`
+      );
 
-      // 1. Initialize State
-      const visitedFingerprints = new Map<string, Id<"ivr_nodes">>(); // Map fingerprint -> nodeId
+      const visitedFingerprints = new Map<string, Id<"ivr_nodes">>();
       const maxDepth = 5;
 
-      // Stack for Iterative DFS
       let stack: { path: string[]; parentId?: Id<"ivr_nodes">; depth: number }[] =
         [];
 
@@ -614,7 +505,6 @@ export const runDiscovery = action({
         stack.push({ path: [], parentId: undefined, depth: 0 });
       }
 
-      // Metrics for Report
       const metrics = {
         startTime: Date.now(),
         nodesDiscovered: 0,
@@ -623,7 +513,7 @@ export const runDiscovery = action({
         errors: 0,
       };
 
-      // 2. Iterative DFS Loop
+      // --- DFS Loop --- //
       while (stack.length > 0) {
         const { path, parentId, depth } = stack.pop()!;
 
@@ -634,26 +524,28 @@ export const runDiscovery = action({
 
         metrics.maxDepthReached = Math.max(metrics.maxDepthReached, depth);
 
-        // A. Dial and Navigate (Replay Path) using dynamic session
         const session = createTelephonySession(entryPoint, inputType);
+        await log(
+          `Created session: ${session instanceof RealTelephonySession ? "RealTelephonySession" : "SimulatedTelephonySession"
+          } for path [${path.join(",")}]`,
+          "debug"
+        );
+
         let result = await session.dial();
 
-        // Replay DTMFs to reach current state
         for (const digit of path) {
           result = await session.sendDtmf(digit);
         }
 
-        // B. Fingerprint & Loop Detection
         const fingerprint = fingerprintPrompt(result.transcript);
         const isLoop = visitedFingerprints.has(fingerprint);
 
         await log(
-          `[Depth ${depth}] Reached node. Confidence: ${(result.confidence * 100).toFixed(
-            1
-          )}%`
+          `[Depth ${depth}] Reached node. Fingerprint=${fingerprint}, Confidence=${(
+            result.confidence * 100
+          ).toFixed(1)}%`
         );
 
-        // C. Save Node
         const nodeId = await ctx.runMutation(internal.discovery.insertNode, {
           projectId,
           parentId,
@@ -676,28 +568,22 @@ export const runDiscovery = action({
 
         if (isLoop) {
           metrics.loopsDetected++;
-          await log(`Loop detected back to node. Stopping branch.`);
+          await log(`Loop detected. Stopping branch at fingerprint=${fingerprint}.`);
           await session.hangup();
           continue;
         }
 
-        // Mark visited
         visitedFingerprints.set(fingerprint, nodeId);
 
-        // D. Extract Options & Recurse
         const options = extractMenuOptions(result.transcript);
 
         if (options.length > 0) {
           await log(
             `Found ${options.length} options: ${options
-              .map((o) => o.dtmf)
-              .join(", ")}`
+              .map((o) => `${o.dtmf}:${o.label}`)
+              .join(" | ")}`
           );
 
-          // Simulate delay for realism
-          await new Promise((r) => setTimeout(r, 500));
-
-          // Push options to stack (reverse order to process 1 first if using pop)
           for (let i = options.length - 1; i >= 0; i--) {
             stack.push({
               path: [...path, options[i].dtmf],
@@ -708,14 +594,16 @@ export const runDiscovery = action({
 
           await session.hangup();
         } else {
-          // Check if we need manual input (Simulated logic: if text contains "enter" or "pin" and no options found)
+          const lower = result.transcript.toLowerCase();
           if (
-            result.transcript.toLowerCase().includes("enter") &&
+            (lower.includes("enter") || lower.includes("pin")) &&
             options.length === 0
           ) {
-            await log("Node requires input. Pausing for human intervention.", "warning");
+            await log(
+              "Node requires input (PIN/ID). Pausing for human intervention.",
+              "warning"
+            );
 
-            // Save state and pause
             stack.push({ path, parentId, depth });
 
             await session.hangup();
@@ -725,7 +613,7 @@ export const runDiscovery = action({
               waitingFor: "PIN/ID",
               resumeState: JSON.stringify(stack),
             });
-            return; // Exit action, wait for resume
+            return;
           }
 
           await log("No further options found. Leaf node.");
@@ -733,19 +621,16 @@ export const runDiscovery = action({
         }
       }
 
-      // 3. Generate Artifacts
       await log("Generating artifacts...");
 
-      // Graph JSON
       const nodes = await ctx.runQuery(api.discovery.getNodes, { projectId });
-      const graphJson = JSON.stringify({ nodes, edges: [] }, null, 2); // Simplified graph
+      const graphJson = JSON.stringify({ nodes, edges: [] }, null, 2);
 
-      // Report JSON
       const reportJson = JSON.stringify(
         {
           jobId,
           entryPoint,
-          platform: "Simulated/Discovered",
+          platform: TELEPHONY_BACKEND_URL ? "Live/Discovered" : "Simulated",
           metrics: {
             ...metrics,
             duration: Date.now() - metrics.startTime,
@@ -757,7 +642,6 @@ export const runDiscovery = action({
         2
       );
 
-      // Test Cases JSON (Generate them)
       const testGenResult = await ctx.runMutation(
         internal.testCases.generateInternal,
         { projectId }
@@ -772,7 +656,7 @@ export const runDiscovery = action({
       await ctx.runMutation(internal.discovery.completeJob, {
         jobId,
         projectId,
-        platform: "Simulated/Discovered",
+        platform: TELEPHONY_BACKEND_URL ? "Live/Discovered" : "Simulated",
         status: "completed",
         artifacts: {
           graph: graphJson,
