@@ -106,9 +106,19 @@ function RunDetails({ runId }: { runId: Id<"test_runs"> }) {
             {/* Recording Player */}
             {result.recordingUrl && (
               <div className="bg-muted/30 p-3 rounded-md border border-muted/50">
-                <div className="flex items-center gap-2 mb-2 text-xs font-medium text-muted-foreground">
-                  <Volume2 className="h-3.5 w-3.5" />
-                  Call Recording
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <Volume2 className="h-3.5 w-3.5" />
+                    Call Recording
+                  </div>
+                  <a 
+                    href={result.recordingUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-primary hover:underline"
+                  >
+                    Open File
+                  </a>
                 </div>
                 <audio controls className="w-full h-8" src={result.recordingUrl}>
                   Your browser does not support the audio element.
