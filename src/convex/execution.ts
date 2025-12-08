@@ -67,6 +67,7 @@ export const runTest = mutation({
       logs: logs,
       duration: Date.now() - startTime + 1500, // Add some base latency
       stepResults: stepResults,
+      recordingUrl: "https://www2.cs.uic.edu/~i101/SoundFiles/BabyElephantWalk60.wav", // Simulated recording
     });
 
     await ctx.db.patch(runId, {

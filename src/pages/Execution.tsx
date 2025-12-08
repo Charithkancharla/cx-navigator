@@ -4,7 +4,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useQuery } from "convex/react";
-import { CheckCircle2, Clock, XCircle, ChevronRight, ChevronDown, AlertCircle } from "lucide-react";
+import { CheckCircle2, Clock, XCircle, ChevronRight, ChevronDown, AlertCircle, Volume2 } from "lucide-react";
 import { useState } from "react";
 import { useParams } from "react-router";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -102,6 +102,19 @@ function RunDetails({ runId }: { runId: Id<"test_runs"> }) {
                 {result.status.toUpperCase()}
               </Badge>
             </div>
+
+            {/* Recording Player */}
+            {result.recordingUrl && (
+              <div className="bg-muted/30 p-3 rounded-md border border-muted/50">
+                <div className="flex items-center gap-2 mb-2 text-xs font-medium text-muted-foreground">
+                  <Volume2 className="h-3.5 w-3.5" />
+                  Call Recording
+                </div>
+                <audio controls className="w-full h-8" src={result.recordingUrl}>
+                  Your browser does not support the audio element.
+                </audio>
+              </div>
+            )}
             
             {/* Step Results Visualization */}
             {result.stepResults && result.stepResults.length > 0 && (
