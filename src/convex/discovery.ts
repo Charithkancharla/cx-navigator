@@ -2,7 +2,8 @@ import { v } from "convex/values";
 import { action, internalMutation, mutation, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+
+// --- Types & Interfaces --- //
 
 type FlowNode = {
   label: string;
@@ -21,26 +22,19 @@ type CuratedIVR = {
   branches: FlowNode[];
 };
 
+// --- Simulation Data (The "Oracle") --- //
+
 const curatedCatalog: CuratedIVR[] = [
   {
     id: "amazon_connect_horizon_bank",
-    entryPoints: [
-      "+18005550199", 
-      "+1 (800) 555-0199", 
-      "aws:contact-flow:horizon", 
-      "+1 646-706-0679",
-      "+16467060679",
-      "6467060679",
-      "18005550199",
-      "8005550199"
-    ],
+    entryPoints: ["+18005550199", "horizon"],
     platform: "Amazon Connect",
     industry: "Banking",
     welcome:
       "Thank you for calling Horizon Federal, powered by Amazon Connect. For English, press 1. Para español, oprima número dos.",
     branches: [
       {
-        label: "Account Services",
+        label: "English",
         type: "menu",
         content: "Press 1 for balances, press 2 for recent activity, or press 0 to reach a banker.",
         metadata: { dtmf: "1", confidence: 0.98 },
@@ -60,158 +54,29 @@ const curatedCatalog: CuratedIVR[] = [
         ],
       },
       {
-        label: "Card & Fraud",
-        type: "menu",
-        content: "Press 2 for card controls, press 3 to report fraud, or stay on the line for an agent.",
-        metadata: { dtmf: "2", confidence: 0.96 },
-        children: [
-          {
-            label: "Freeze Card",
-            type: "prompt",
-            content: "Say 'freeze' or press 1 to temporarily pause your debit card.",
-            metadata: { dtmf: "1", intent: "freeze", confidence: 0.93 },
-          },
-          {
-            label: "Fraud Specialist",
-            type: "prompt",
-            content: "Please hold while we connect you to a certified fraud specialist.",
-            metadata: { dtmf: "0", confidence: 0.97 },
-          },
-        ],
-      },
-      {
-        label: "Concierge Banker",
+        label: "Spanish",
         type: "prompt",
-        content: "Please hold while we route your call to a dedicated banker.",
-        metadata: { dtmf: "0", confidence: 0.99 },
-      },
-    ],
-  },
-  {
-    id: "genesys_cloud_skyway",
-    entryPoints: [
-      "+442080555200", 
-      "442080555200",
-      "2080555200",
-      "sip:ivr@skyway-air.com", 
-      "genesys:skyway:routing-point"
-    ],
-    platform: "Genesys Cloud CX",
-    industry: "Travel",
-    welcome:
-      "Welcome to Skyway Airlines. This call is recorded. Say 'book' to make a reservation or stay on the line for menu options.",
-    branches: [
-      {
-        label: "Reservations",
-        type: "menu",
-        content: "Say 'book flight' or press 1 to book. Say 'change' or press 2 to modify an itinerary.",
-        metadata: { dtmf: "1", intent: "book flight", confidence: 0.97 },
-        children: [
-          {
-            label: "Book Flight",
-            type: "prompt",
-            content: "Please state your departure city after the tone.",
-            metadata: { intent: "book flight", confidence: 0.95 },
-          },
-          {
-            label: "Change Flight",
-            type: "prompt",
-            content: "Provide your confirmation code or press 2 to enter it via keypad.",
-            metadata: { dtmf: "2", intent: "change flight", confidence: 0.94 },
-          },
-        ],
-      },
-      {
-        label: "Flight Status",
-        type: "prompt",
-        content: "Say your flight number or press 3 to enter the digits on your keypad.",
-        metadata: { dtmf: "3", intent: "flight status", confidence: 0.93 },
-      },
-      {
-        label: "Baggage Services",
-        type: "prompt",
-        content: "Say 'lost bag' or press 4 for baggage services.",
-        metadata: { dtmf: "4", intent: "lost bag", confidence: 0.92 },
-      },
-    ],
-  },
-  {
-    id: "twilio_flex_atlas",
-    entryPoints: [
-      "+13125550188", 
-      "+1 312-555-0188",
-      "13125550188",
-      "3125550188",
-      "twilio:number:atlas-support", 
-      "https://chat.atlas-retail.com"
-    ],
-    platform: "Twilio Flex",
-    industry: "Retail",
-    welcome:
-      "Atlas Retail Support. Press 1 for order status, press 2 for returns, say 'agent' at any time to escalate.",
-    branches: [
-      {
-        label: "Order Status",
-        type: "prompt",
-        content: "Enter your order number or say 'lookup' to search by email.",
-        metadata: { dtmf: "1", intent: "lookup", confidence: 0.9 },
-      },
-      {
-        label: "Returns",
-        type: "menu",
-        content: "Press 2 for self-service returns, press 3 to speak to a stylist.",
-        metadata: { dtmf: "2", confidence: 0.92 },
-        children: [
-          {
-            label: "Return Label",
-            type: "prompt",
-            content: "We texted you a return label. Say 'email' if you'd like it emailed instead.",
-            metadata: { intent: "email label", confidence: 0.9 },
-          },
-          {
-            label: "Stylist Team",
-            type: "prompt",
-            content: "Connecting you with a live stylist now.",
-            metadata: { dtmf: "3", confidence: 0.93 },
-          },
-        ],
-      },
-      {
-        label: "Escalate to Agent",
-        type: "prompt",
-        content: "Please hold while we route you to the next available Twilio Flex agent.",
-        metadata: { intent: "agent", confidence: 0.99 },
-      },
+        content: "Gracias. Por favor espere un momento.",
+        metadata: { dtmf: "2", confidence: 0.99 },
+      }
     ],
   },
 ];
 
-function normalizeEntryPoint(value: string): string {
-  // Remove all non-alphanumeric characters except + at the start
-  let normalized = value.trim().toLowerCase();
-  
-  // Extract just digits and + sign
-  normalized = normalized.replace(/[^0-9+a-z:]/g, "");
-  
-  return normalized;
-}
+// --- Helper Functions --- //
 
-function matchCuratedFlow(value: string): CuratedIVR | null {
-  const normalized = normalizeEntryPoint(value);
-  return (
-    curatedCatalog.find((entry) =>
-      entry.entryPoints.some((candidate) => normalizeEntryPoint(candidate) === normalized),
-    ) ?? null
-  );
+function normalizeEntryPoint(value: string): string {
+  let normalized = value.trim().toLowerCase();
+  normalized = normalized.replace(/[^0-9+a-z:]/g, "");
+  return normalized;
 }
 
 function generateSimulatedFlow(value: string): CuratedIVR {
   const normalized = normalizeEntryPoint(value);
-  // Simple deterministic hash from string
   const hash = normalized.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
   
-  const platforms = ["Amazon Connect", "Genesys Cloud CX", "Twilio Flex", "Nice CXone", "Avaya Experience Platform"];
-  const industries = ["Retail", "Banking", "Healthcare", "Travel", "Insurance", "Telecommunications"];
+  const platforms = ["Amazon Connect", "Genesys Cloud CX", "Twilio Flex", "Nice CXone"];
+  const industries = ["Retail", "Banking", "Healthcare", "Travel"];
   
   const platform = platforms[hash % platforms.length];
   const industry = industries[hash % industries.length];
@@ -258,9 +123,9 @@ function generateSimulatedFlow(value: string): CuratedIVR {
         ]
       },
       {
-        label: "Billing & Payments",
+        label: "Billing",
         type: "prompt",
-        content: "For billing questions or to make a payment, press 3.",
+        content: "For billing questions, press 3.",
         metadata: { dtmf: "3", confidence: 0.96 },
       }
     ]
@@ -269,10 +134,7 @@ function generateSimulatedFlow(value: string): CuratedIVR {
 
 function parseTranscriptFlow(text: string): CuratedIVR {
   const branches: FlowNode[] = [];
-  
-  // Look for "Press [digit] for [Label]" patterns (simple regex)
-  // e.g. "Press 1 for Sales"
-  const pressMatches = text.matchAll(/Press (\d) for ([^.,;]+)/gi);
+  const pressMatches = text.matchAll(/Press (\\d) for ([^.,;]+)/gi);
   for (const match of pressMatches) {
     branches.push({
       label: match[2].trim(),
@@ -281,19 +143,6 @@ function parseTranscriptFlow(text: string): CuratedIVR {
       metadata: { dtmf: match[1], confidence: 1.0 }
     });
   }
-
-  // Look for "Say [word] for [Label]" patterns
-  // e.g. "Say 'sales' for Sales"
-  const sayMatches = text.matchAll(/Say ['"]?(\w+)['"]? for ([^.,;]+)/gi);
-  for (const match of sayMatches) {
-     branches.push({
-      label: match[2].trim(),
-      type: "prompt",
-      content: `(Simulated) You said ${match[1]}.`,
-      metadata: { intent: match[1].toLowerCase(), confidence: 1.0 }
-    });
-  }
-
   return {
     id: "transcript_flow",
     entryPoints: [],
@@ -304,7 +153,96 @@ function parseTranscriptFlow(text: string): CuratedIVR {
   };
 }
 
-// --- Internal Mutations for Action --- //
+// --- Strict Matching & Fingerprinting --- //
+
+function normalizeText(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
+}
+
+function fingerprintPrompt(text: string): string {
+  // Simple hash for simulation. In production, use a robust hash of the audio or normalized text.
+  let hash = 0;
+  const normalized = normalizeText(text);
+  if (normalized.length === 0) return "empty";
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(16);
+}
+
+function extractMenuOptions(text: string): { dtmf: string; label: string }[] {
+  const options: { dtmf: string; label: string }[] = [];
+  // Regex to find "Press X for Y" or "For Y, press X"
+  const patterns = [
+    /Press (\d) for ([^.,;]+)/gi,
+    /For ([^.,;]+),? press (\d)/gi
+  ];
+
+  for (const pattern of patterns) {
+    const matches = text.matchAll(pattern);
+    for (const match of matches) {
+      // Determine which group is digit and which is label
+      const g1 = match[1];
+      const g2 = match[2];
+      if (/\d/.test(g1)) {
+        options.push({ dtmf: g1, label: g2.trim() });
+      } else {
+        options.push({ dtmf: g2, label: g1.trim() });
+      }
+    }
+  }
+  return options;
+}
+
+// --- Simulated Telephony Adapter --- //
+
+class SimulatedTelephonySession {
+  private flow: CuratedIVR;
+  private currentNode: FlowNode | null = null;
+  private isConnected: boolean = false;
+
+  constructor(entryPoint: string, inputType?: string) {
+    if (inputType === "text") {
+      this.flow = parseTranscriptFlow(entryPoint);
+    } else {
+      const normalized = normalizeEntryPoint(entryPoint);
+      this.flow = curatedCatalog.find(c => c.entryPoints.some(e => normalizeEntryPoint(e) === normalized)) 
+        ?? generateSimulatedFlow(entryPoint);
+    }
+  }
+
+  async dial(): Promise<string> {
+    this.isConnected = true;
+    // Start at root (conceptually before the first prompt, but for sim we return welcome)
+    return this.flow.welcome;
+  }
+
+  async sendDtmf(digit: string): Promise<string> {
+    if (!this.isConnected) throw new Error("Call not connected");
+    
+    // Traverse logic
+    let children = this.currentNode ? this.currentNode.children : this.flow.branches;
+    
+    if (!children) return "Invalid option.";
+
+    const match = children.find(c => c.metadata?.dtmf === digit);
+    if (match) {
+      this.currentNode = match;
+      return match.content;
+    }
+    
+    return "Invalid selection. Please try again.";
+  }
+
+  async hangup() {
+    this.isConnected = false;
+    this.currentNode = null;
+  }
+}
+
+// --- Internal Mutations --- //
 
 export const createJob = mutation({
   args: {
@@ -356,6 +294,9 @@ export const insertNode = internalMutation({
     label: v.string(),
     content: v.string(),
     metadata: v.optional(v.any()),
+    fingerprint: v.optional(v.string()),
+    isLoop: v.optional(v.boolean()),
+    linkedNodeId: v.optional(v.id("ivr_nodes")),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("ivr_nodes", {
@@ -365,6 +306,9 @@ export const insertNode = internalMutation({
       label: args.label,
       content: args.content,
       metadata: args.metadata,
+      fingerprint: args.fingerprint,
+      isLoop: args.isLoop,
+      linkedNodeId: args.linkedNodeId,
     });
   },
 });
@@ -388,7 +332,18 @@ export const completeJob = internalMutation({
   },
 });
 
-// --- Action: The "Crawl Engine" --- //
+export const setWaiting = internalMutation({
+  args: {
+    jobId: v.id("discovery_jobs"),
+    waitingFor: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: "waiting_for_input",
+      waitingFor: args.waitingFor,
+    });
+  },
+});
 
 export const resumeJob = mutation({
   args: {
@@ -400,10 +355,10 @@ export const resumeJob = mutation({
       status: "running",
       waitingFor: undefined,
     });
-    // In a real system, this would trigger the crawler to continue with the input
-    // For simulation, we'll just log it and mark complete for now, or trigger a continue action
   },
 });
+
+// --- Action: The "Crawl Engine" (DFS Graph Traversal) --- //
 
 export const continueDiscovery = action({
   args: {
@@ -412,36 +367,17 @@ export const continueDiscovery = action({
     input: v.string(),
   },
   handler: async (ctx, args) => {
-    const { jobId, projectId, input } = args;
-    const log = async (msg: string, type: string = "info") => {
-      await ctx.runMutation(internal.discovery.writeLog, { jobId, message: msg, type });
-    };
-
-    await log(`User provided input: ${input}`);
-    await new Promise(r => setTimeout(r, 1000));
-    await log("Input accepted. Authenticated successfully.");
-    await new Promise(r => setTimeout(r, 800));
-    
-    // Simulate discovering the protected area
-    const parentNodes = await ctx.runQuery(api.discovery.getNodes, { projectId });
-    const lastNode = parentNodes[parentNodes.length - 1]; // Naive attach to last node
-
-    if (lastNode) {
-      await ctx.runMutation(internal.discovery.insertNode, {
-        projectId,
-        parentId: lastNode._id,
-        type: "menu",
-        label: "Secure Account Menu",
-        content: "Welcome to your secure account dashboard. Press 1 for statements.",
-        metadata: { confidence: 0.99, protected: true },
-      });
-    }
-
-    await log("Secure area mapped.");
+    // For now, just log and complete as this is a complex state resume
+    // In a real implementation, we would need to persist the DFS stack
+    await ctx.runMutation(internal.discovery.writeLog, { 
+      jobId: args.jobId, 
+      message: `Resumed with input: ${args.input}. (Complex resume not fully implemented in sim)`, 
+      type: "info" 
+    });
     await ctx.runMutation(internal.discovery.completeJob, {
-      jobId,
-      projectId,
-      platform: "Authenticated System",
+      jobId: args.jobId,
+      projectId: args.projectId,
+      platform: "Resumed Session",
       status: "completed",
     });
   }
@@ -462,127 +398,93 @@ export const runDiscovery = action({
     };
 
     try {
-      // Check for Real Telephony Credentials
-      const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID;
-      const isRealMode = !!TWILIO_SID;
-
-      await log(`Initializing discovery agent for target: ${entryPoint.substring(0, 20)}${entryPoint.length > 20 ? '...' : ''}`);
-      if (!isRealMode && inputType !== "text") {
-        await log("NOTE: No Telephony Provider configured (TWILIO_ACCOUNT_SID missing). Using High-Fidelity Simulation Mode.", "info");
-      }
+      await log(`Starting Graph-Based Discovery for ${entryPoint}...`);
       
-      await new Promise(r => setTimeout(r, 800));
+      // 1. Initialize State
+      const visitedFingerprints = new Map<string, Id<"ivr_nodes">>(); // Map fingerprint -> nodeId
+      const maxDepth = 5;
+      
+      // 2. Define DFS Traversal Function
+      const explore = async (path: string[], parentId?: Id<"ivr_nodes">, depth: number = 0) => {
+        if (depth > maxDepth) {
+          await log(`Max depth (${maxDepth}) reached. Pruning branch.`, "debug");
+          return;
+        }
 
-      let flow: CuratedIVR | null = null;
-
-      if (inputType === "text") {
-        await log("Input type is Text Transcript. Skipping telephony initialization.");
-        await new Promise(r => setTimeout(r, 500));
-        await log("Parsing transcript structure...");
-        await new Promise(r => setTimeout(r, 1000));
+        // A. Dial and Navigate (Replay Path)
+        // In a real system, we might try to "backtrack", but for robustness, we often redial or reset.
+        // Here we simulate a fresh call and navigation to the current point.
+        const session = new SimulatedTelephonySession(entryPoint, inputType);
+        let currentText = await session.dial();
         
-        flow = parseTranscriptFlow(entryPoint);
-        await log(`Parsed ${flow.branches.length} potential branches from text.`);
-      } else {
-        if (isRealMode) {
-           await log("Connecting to Twilio Programmable Voice...");
-           // Real implementation would go here
-           await log("Dialing via PSTN Gateway...");
-        } else {
-           await log("Allocating SIP trunk from pool (us-east-1)...");
+        // Replay DTMFs to reach current state
+        for (const digit of path) {
+          currentText = await session.sendDtmf(digit);
         }
-        await new Promise(r => setTimeout(r, 1000));
 
-        await log(`Dialing ${entryPoint}...`);
-        await new Promise(r => setTimeout(r, 1500));
+        // B. Fingerprint & Loop Detection
+        const fingerprint = fingerprintPrompt(currentText);
+        const isLoop = visitedFingerprints.has(fingerprint);
+        
+        await log(`[Depth ${depth}] Reached node. Fingerprint: ${fingerprint.substring(0, 6)}... ${isLoop ? "(LOOP DETECTED)" : ""}`);
 
-        await log("Connection established. SIP 200 OK.");
-        await log("Analyzing RTP stream for audio fingerprinting...");
-        await new Promise(r => setTimeout(r, 1200));
+        // C. Save Node
+        const nodeId = await ctx.runMutation(internal.discovery.insertNode, {
+          projectId,
+          parentId,
+          type: depth === 0 ? "menu" : "prompt", // Simplified type inference
+          label: depth === 0 ? "Main Menu" : `Option ${path[path.length - 1]}`,
+          content: currentText,
+          metadata: { 
+            path: path.join(">"), 
+            confidence: 1.0,
+            dtmf: path.length > 0 ? path[path.length - 1] : undefined
+          },
+          fingerprint,
+          isLoop,
+          linkedNodeId: isLoop ? visitedFingerprints.get(fingerprint) : undefined,
+        });
 
-        // Determine the flow to "discover"
-        flow = matchCuratedFlow(entryPoint);
-        if (!flow) {
-          await log("No cached fingerprint found. Initiating dynamic traversal.");
-          flow = generateSimulatedFlow(entryPoint);
-        } else {
-          await log(`Matched known IVR signature: ${flow.id}`);
+        if (isLoop) {
+          await log(`Loop detected back to node ${visitedFingerprints.get(fingerprint)}. Stopping branch.`);
+          return;
         }
-      }
 
-      if (!flow) throw new Error("Failed to generate flow");
+        // Mark visited
+        visitedFingerprints.set(fingerprint, nodeId);
 
-      await log(`Detected Platform: ${flow.platform} (${flow.industry})`);
-      await new Promise(r => setTimeout(r, 800));
+        // D. Extract Options & Recurse
+        const options = extractMenuOptions(currentText);
+        
+        if (options.length > 0) {
+          await log(`Found ${options.length} options: ${options.map(o => o.dtmf).join(", ")}`);
+          
+          // Simulate delay for realism
+          await new Promise(r => setTimeout(r, 800));
 
-      if (inputType !== "text") {
-        await log("Voice Activity Detected. Transcribing welcome prompt...");
-        await new Promise(r => setTimeout(r, 1000));
-      }
-
-      // Insert Root Node
-      const rootId = await ctx.runMutation(internal.discovery.insertNode, {
-        projectId,
-        type: "menu",
-        label: "Main Menu",
-        content: flow.welcome,
-        metadata: {
-          platform: flow.platform,
-          industry: flow.industry,
-          entryPoint: inputType === "text" ? "Transcript" : entryPoint,
-          confidence: 0.99,
-        },
-      });
-
-      await log("Root menu mapped. Exploring branches...");
-
-      // Recursive function to "crawl" branches with delays
-      const crawlBranches = async (branches: FlowNode[], parentId: Id<"ivr_nodes">) => {
-        for (const branch of branches) {
-          await new Promise(r => setTimeout(r, 600)); // Crawl delay
-          await log(`Navigating option: ${branch.label} (DTMF: ${branch.metadata?.dtmf || "Voice"})`);
-
-          const nodeId = await ctx.runMutation(internal.discovery.insertNode, {
-            projectId,
-            parentId,
-            type: branch.type,
-            label: branch.label,
-            content: branch.content,
-            metadata: branch.metadata,
-          });
-
-          if (branch.children && branch.children.length > 0) {
-            await crawlBranches(branch.children, nodeId);
+          for (const option of options) {
+            await explore([...path, option.dtmf], nodeId, depth + 1);
           }
+        } else {
+          await log("No further options found. Leaf node.");
         }
+        
+        await session.hangup();
       };
 
-      await crawlBranches(flow.branches, rootId);
+      // 3. Start Crawl
+      await explore([]);
 
-      // Simulate Human Intervention for specific numbers or random chance
-      if (entryPoint.includes("999") || (Math.random() > 0.8 && inputType !== "text")) {
-        await log("⚠️ Input Required: System requested PIN/ID authentication.");
-        await ctx.runMutation(internal.discovery.setWaiting, {
-          jobId,
-          waitingFor: "PIN",
-        });
-        return; // Stop execution here, wait for resume
-      }
-
-      await log("Traversal complete. All reachable nodes mapped.");
-      if (inputType !== "text") {
-        await log("Disconnecting session.");
-      }
-
+      await log("Graph traversal complete.");
       await ctx.runMutation(internal.discovery.completeJob, {
         jobId,
         projectId,
-        platform: flow.platform,
+        platform: "Simulated/Discovered",
         status: "completed",
       });
 
     } catch (error: any) {
-      await log(`Error during discovery: ${error.message}`, "error");
+      await log(`Critical Failure: ${error.message}`, "error");
       await ctx.runMutation(internal.discovery.completeJob, {
         jobId,
         projectId,
@@ -590,19 +492,6 @@ export const runDiscovery = action({
         status: "failed",
       });
     }
-  },
-});
-
-export const setWaiting = internalMutation({
-  args: {
-    jobId: v.id("discovery_jobs"),
-    waitingFor: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.jobId, {
-      status: "waiting_for_input",
-      waitingFor: args.waitingFor,
-    });
   },
 });
 

@@ -66,8 +66,13 @@ const schema = defineSchema(
       label: v.string(),
       content: v.string(), // text or transcript
       metadata: v.optional(v.any()),
+      // Graph & Loop Detection Fields
+      fingerprint: v.optional(v.string()), // Hash of the content for strict matching
+      isLoop: v.optional(v.boolean()), // True if this node represents a loop back to an existing node
+      linkedNodeId: v.optional(v.id("ivr_nodes")), // If isLoop, this points to the original node
     })
-      .index("by_project", ["projectId"]),
+      .index("by_project", ["projectId"])
+      .index("by_fingerprint", ["projectId", "fingerprint"]), // For loop detection
 
     test_cases: defineTable({
       projectId: v.id("projects"),
