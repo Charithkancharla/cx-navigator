@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@convex-dev/auth": "^0.0.86",
+    "@deepgram/sdk": "^4.11.2",
     "@faker-js/faker": "^9.8.0",
     "@hookform/resolvers": "^5.0.1",
     "@jridgewell/trace-mapping": "^0.3.25",
@@ -56,6 +57,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "convex": "^1.30.0",
+    "cors": "^2.8.5",
     "crud": "link:convex-helpers/server/crud",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
@@ -79,6 +81,7 @@
     "tailwind-merge": "^3.3.0",
     "tailwindcss": "^4.1.8",
     "three": "^0.177.0",
+    "tsx": "^4.21.0",
     "twilio": "^5.10.7",
     "uuid": "^13.0.0",
     "vaul": "^1.1.2",
