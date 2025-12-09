@@ -117,8 +117,7 @@ interface TelephonySession {
 }
 
 // Backend service that actually talks to Twilio / Connect / SIP / etc.
-// Removed top-level constant to ensure fresh env var access
-// const TELEPHONY_BACKEND_URL = process.env.TELEPHONY_BACKEND_URL ?? "";
+const TELEPHONY_BACKEND_URL = process.env.TELEPHONY_BACKEND_URL || "https://CXNavigator.vly.site";
 
 /**
  * Real telephony session: talks to a separate backend that:
@@ -132,7 +131,7 @@ class RealTelephonySession implements TelephonySession {
   private endpoint: string;
 
   constructor(endpoint: string) {
-    if (!process.env.TELEPHONY_BACKEND_URL) {
+    if (!TELEPHONY_BACKEND_URL) {
       throw new Error(
         "TELEPHONY_BACKEND_URL is not configured for RealTelephonySession"
       );
@@ -141,7 +140,7 @@ class RealTelephonySession implements TelephonySession {
   }
 
   async dial(): Promise<AudioProcessingResult> {
-    const baseUrl = process.env.TELEPHONY_BACKEND_URL;
+    const baseUrl = TELEPHONY_BACKEND_URL;
     const res = await fetch(`${baseUrl}/dial`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -169,7 +168,7 @@ class RealTelephonySession implements TelephonySession {
       throw new Error("Call not connected");
     }
 
-    const baseUrl = process.env.TELEPHONY_BACKEND_URL;
+    const baseUrl = TELEPHONY_BACKEND_URL;
     const res = await fetch(`${baseUrl}/send-dtmf`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -195,7 +194,7 @@ class RealTelephonySession implements TelephonySession {
     if (!this.callId) return;
 
     try {
-      const baseUrl = process.env.TELEPHONY_BACKEND_URL;
+      const baseUrl = TELEPHONY_BACKEND_URL;
       await fetch(`${baseUrl}/hangup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
