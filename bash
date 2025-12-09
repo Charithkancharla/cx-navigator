@@ -1,1 +1,1 @@
-ls -la server.ts
+ls -la server.ts .env && cat server.ts
