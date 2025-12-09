@@ -1,1 +1,1 @@
-cat package.json
+ls -la server.ts
