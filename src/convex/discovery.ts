@@ -492,6 +492,9 @@ export const runDiscovery = action({
     };
 
     try {
+      const actionEnv = (ctx as { env?: Record<string, string | undefined> }).env;
+      const backendUrl = actionEnv?.TELEPHONY_BACKEND_URL ?? process.env.TELEPHONY_BACKEND_URL;
+
       await log(
         `Starting Graph-Based Discovery for ${entryPoint} (inputType=${inputType ?? "none"})...`
       );
@@ -533,11 +536,11 @@ export const runDiscovery = action({
 
         metrics.maxDepthReached = Math.max(metrics.maxDepthReached, depth);
 
-        const backendUrl = process.env.TELEPHONY_BACKEND_URL;
         await log(`TELEPHONY_BACKEND_URL=${String(backendUrl)}`, "debug");
         const session = createTelephonySession(entryPoint, inputType, backendUrl);
         await log(
-          `Created session: ${session instanceof RealTelephonySession ? "RealTelephonySession" : "SimulatedTelephonySession"
+          `Created session: ${
+            session instanceof RealTelephonySession ? "RealTelephonySession" : "SimulatedTelephonySession"
           } for path [${path.join(",")}]`,
           "debug"
         );
@@ -641,7 +644,7 @@ export const runDiscovery = action({
         {
           jobId,
           entryPoint,
-          platform: process.env.TELEPHONY_BACKEND_URL ? "Live/Discovered" : "Simulated",
+          platform: backendUrl ? "Live/Discovered" : "Simulated",
           metrics: {
             ...metrics,
             duration: Date.now() - metrics.startTime,
@@ -667,7 +670,7 @@ export const runDiscovery = action({
       await ctx.runMutation(internal.discovery.completeJob, {
         jobId,
         projectId,
-        platform: process.env.TELEPHONY_BACKEND_URL ? "Live/Discovered" : "Simulated",
+        platform: backendUrl ? "Live/Discovered" : "Simulated",
         status: "completed",
         artifacts: {
           graph: graphJson,
