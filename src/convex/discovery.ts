@@ -116,9 +116,6 @@ interface TelephonySession {
   hangup(): Promise<void>;
 }
 
-// Backend service that actually talks to Twilio / Connect / SIP / etc.
-const TELEPHONY_BACKEND_URL = process.env.TELEPHONY_BACKEND_URL || "https://CXNavigator.vly.site";
-
 /**
  * Real telephony session: talks to a separate backend that:
  *  - places the call
@@ -129,38 +126,38 @@ const TELEPHONY_BACKEND_URL = process.env.TELEPHONY_BACKEND_URL || "https://CXNa
 class RealTelephonySession implements TelephonySession {
   private callId: string | null = null;
   private endpoint: string;
+  private backendUrl: string;
 
-  constructor(endpoint: string) {
-    if (!TELEPHONY_BACKEND_URL) {
-      throw new Error(
-        "TELEPHONY_BACKEND_URL is not configured for RealTelephonySession"
-      );
-    }
+  constructor(endpoint: string, backendUrl: string) {
     this.endpoint = endpoint;
+    this.backendUrl = backendUrl;
   }
 
   async dial(): Promise<AudioProcessingResult> {
-    const baseUrl = TELEPHONY_BACKEND_URL;
-    const res = await fetch(`${baseUrl}/dial`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: this.endpoint }),
-    });
+    try {
+      const res = await fetch(`${this.backendUrl}/dial`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: this.endpoint }),
+      });
 
-    if (!res.ok) {
-      throw new Error(`Dial failed with status ${res.status}`);
+      if (!res.ok) {
+        throw new Error(`Dial failed with status ${res.status}`);
+      }
+
+      const data = await res.json();
+      this.callId = data.callId;
+
+      return {
+        transcript: data.transcript ?? "",
+        confidence: data.confidence ?? 0,
+        audioUrl: data.audioUrl ?? "",
+        durationMs: data.durationMs ?? 0,
+        detectedDtmf: data.detectedDtmf,
+      };
+    } catch (err: any) {
+      throw new Error(`RealTelephonySession.dial error: ${err.message}`);
     }
-
-    const data = await res.json();
-    this.callId = data.callId;
-
-    return {
-      transcript: data.transcript,
-      confidence: data.confidence,
-      audioUrl: data.audioUrl,
-      durationMs: data.durationMs,
-      detectedDtmf: data.detectedDtmf,
-    };
   }
 
   async sendDtmf(digit: string): Promise<AudioProcessingResult> {
@@ -168,40 +165,42 @@ class RealTelephonySession implements TelephonySession {
       throw new Error("Call not connected");
     }
 
-    const baseUrl = TELEPHONY_BACKEND_URL;
-    const res = await fetch(`${baseUrl}/send-dtmf`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ callId: this.callId, digit }),
-    });
+    try {
+      const res = await fetch(`${this.backendUrl}/send-dtmf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ callId: this.callId, digit }),
+      });
 
-    if (!res.ok) {
-      throw new Error(`sendDtmf failed with status ${res.status}`);
+      if (!res.ok) {
+        throw new Error(`sendDtmf failed with status ${res.status}`);
+      }
+
+      const data = await res.json();
+
+      return {
+        transcript: data.transcript ?? "",
+        confidence: data.confidence ?? 0,
+        audioUrl: data.audioUrl ?? "",
+        durationMs: data.durationMs ?? 0,
+        detectedDtmf: data.detectedDtmf,
+      };
+    } catch (err: any) {
+      throw new Error(`RealTelephonySession.sendDtmf error: ${err.message}`);
     }
-
-    const data = await res.json();
-
-    return {
-      transcript: data.transcript,
-      confidence: data.confidence,
-      audioUrl: data.audioUrl,
-      durationMs: data.durationMs,
-      detectedDtmf: data.detectedDtmf,
-    };
   }
 
   async hangup(): Promise<void> {
     if (!this.callId) return;
 
     try {
-      const baseUrl = TELEPHONY_BACKEND_URL;
-      await fetch(`${baseUrl}/hangup`, {
+      await fetch(`${this.backendUrl}/hangup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ callId: this.callId }),
       });
-    } catch {
-      // best-effort
+    } catch (err: any) {
+      console.error(`RealTelephonySession.hangup error: ${err.message}`);
     } finally {
       this.callId = null;
     }
@@ -286,7 +285,8 @@ class SimulatedTelephonySession implements TelephonySession {
  */
 function createTelephonySession(
   entryPoint: string,
-  inputType: string | undefined
+  inputType: string | undefined,
+  backendUrl?: string
 ): TelephonySession {
   if (inputType === "text" || inputType === "simulated") {
     return new SimulatedTelephonySession(entryPoint, inputType);
@@ -297,11 +297,17 @@ function createTelephonySession(
   const looksLikeSip = ep.startsWith("sip");
 
   if (looksLikePhone || looksLikeSip) {
-    return new RealTelephonySession(entryPoint);
+    if (!backendUrl) {
+      throw new Error("TELEPHONY_BACKEND_URL is not configured for RealTelephonySession");
+    }
+    return new RealTelephonySession(entryPoint, backendUrl);
   }
 
   // Default: treat unknown formats as real to avoid silently simulating
-  return new RealTelephonySession(entryPoint);
+  if (!backendUrl) {
+    throw new Error("TELEPHONY_BACKEND_URL is not configured for RealTelephonySession");
+  }
+  return new RealTelephonySession(entryPoint, backendUrl);
 }
 
 // --- Internal Mutations --- //
@@ -527,7 +533,8 @@ export const runDiscovery = action({
 
         metrics.maxDepthReached = Math.max(metrics.maxDepthReached, depth);
 
-        const session = createTelephonySession(entryPoint, inputType);
+        const backendUrl = process.env.TELEPHONY_BACKEND_URL;
+        const session = createTelephonySession(entryPoint, inputType, backendUrl);
         await log(
           `Created session: ${session instanceof RealTelephonySession ? "RealTelephonySession" : "SimulatedTelephonySession"
           } for path [${path.join(",")}]`,
