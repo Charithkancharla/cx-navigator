@@ -117,7 +117,8 @@ interface TelephonySession {
 }
 
 // Backend service that actually talks to Twilio / Connect / SIP / etc.
-const TELEPHONY_BACKEND_URL = process.env.TELEPHONY_BACKEND_URL ?? "";
+// Removed top-level constant to ensure fresh env var access
+// const TELEPHONY_BACKEND_URL = process.env.TELEPHONY_BACKEND_URL ?? "";
 
 /**
  * Real telephony session: talks to a separate backend that:
@@ -131,7 +132,7 @@ class RealTelephonySession implements TelephonySession {
   private endpoint: string;
 
   constructor(endpoint: string) {
-    if (!TELEPHONY_BACKEND_URL) {
+    if (!process.env.TELEPHONY_BACKEND_URL) {
       throw new Error(
         "TELEPHONY_BACKEND_URL is not configured for RealTelephonySession"
       );
@@ -140,7 +141,8 @@ class RealTelephonySession implements TelephonySession {
   }
 
   async dial(): Promise<AudioProcessingResult> {
-    const res = await fetch(`${TELEPHONY_BACKEND_URL}/dial`, {
+    const baseUrl = process.env.TELEPHONY_BACKEND_URL;
+    const res = await fetch(`${baseUrl}/dial`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ endpoint: this.endpoint }),
@@ -167,7 +169,8 @@ class RealTelephonySession implements TelephonySession {
       throw new Error("Call not connected");
     }
 
-    const res = await fetch(`${TELEPHONY_BACKEND_URL}/send-dtmf`, {
+    const baseUrl = process.env.TELEPHONY_BACKEND_URL;
+    const res = await fetch(`${baseUrl}/send-dtmf`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ callId: this.callId, digit }),
@@ -192,7 +195,8 @@ class RealTelephonySession implements TelephonySession {
     if (!this.callId) return;
 
     try {
-      await fetch(`${TELEPHONY_BACKEND_URL}/hangup`, {
+      const baseUrl = process.env.TELEPHONY_BACKEND_URL;
+      await fetch(`${baseUrl}/hangup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ callId: this.callId }),
@@ -630,7 +634,7 @@ export const runDiscovery = action({
         {
           jobId,
           entryPoint,
-          platform: TELEPHONY_BACKEND_URL ? "Live/Discovered" : "Simulated",
+          platform: process.env.TELEPHONY_BACKEND_URL ? "Live/Discovered" : "Simulated",
           metrics: {
             ...metrics,
             duration: Date.now() - metrics.startTime,
@@ -656,7 +660,7 @@ export const runDiscovery = action({
       await ctx.runMutation(internal.discovery.completeJob, {
         jobId,
         projectId,
-        platform: TELEPHONY_BACKEND_URL ? "Live/Discovered" : "Simulated",
+        platform: process.env.TELEPHONY_BACKEND_URL ? "Live/Discovered" : "Simulated",
         status: "completed",
         artifacts: {
           graph: graphJson,
