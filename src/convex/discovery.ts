@@ -534,6 +534,7 @@ export const runDiscovery = action({
         metrics.maxDepthReached = Math.max(metrics.maxDepthReached, depth);
 
         const backendUrl = process.env.TELEPHONY_BACKEND_URL;
+        await log(`TELEPHONY_BACKEND_URL=${String(backendUrl)}`, "debug");
         const session = createTelephonySession(entryPoint, inputType, backendUrl);
         await log(
           `Created session: ${session instanceof RealTelephonySession ? "RealTelephonySession" : "SimulatedTelephonySession"
