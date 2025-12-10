@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useMutation, useQuery, useAction } from "convex/react";
@@ -37,6 +38,7 @@ export default function Discovery() {
 
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [inputType, setInputType] = useState("phone");
+  const [isSimulated, setIsSimulated] = useState(false);
   const [manualInput, setManualInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -66,12 +68,15 @@ export default function Discovery() {
     const formData = new FormData(e.currentTarget);
     const inputVal = formData.get("inputValue") as string;
     
+    // Determine effective input type
+    const effectiveInputType = isSimulated ? "simulated" : inputType;
+
     try {
       // 1. Create Job
       const jobId = await createJob({
         projectId: projectId as Id<"projects">,
         entryPoint: inputVal,
-        inputType: inputType,
+        inputType: effectiveInputType,
       });
       setCurrentJobId(jobId);
 
@@ -80,10 +85,10 @@ export default function Discovery() {
         jobId,
         projectId: projectId as Id<"projects">,
         entryPoint: inputVal,
-        inputType: inputType,
+        inputType: effectiveInputType,
       });
       
-      toast.success("Discovery started");
+      toast.success(isSimulated ? "Simulation started" : "Discovery started");
     } catch (error) {
       toast.error("Discovery failed to start");
       console.error(error);
@@ -133,40 +138,61 @@ export default function Discovery() {
               <CardDescription>Configure and run automated discovery to map your CX system.</CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleDiscover} className="flex gap-4 items-start">
-                <div className="space-y-2 w-[140px]">
-                  <Label>Input Type</Label>
-                  <Select name="inputType" value={inputType} onValueChange={setInputType}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="phone">Phone Number</SelectItem>
-                      <SelectItem value="sip">SIP URI</SelectItem>
-                      <SelectItem value="text">Text Transcript</SelectItem>
-                    </SelectContent>
-                  </Select>
+              <form onSubmit={handleDiscover} className="flex flex-col gap-4">
+                <div className="flex gap-4 items-start">
+                  <div className="space-y-2 w-[140px]">
+                    <Label>Input Type</Label>
+                    <Select name="inputType" value={inputType} onValueChange={setInputType}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="phone">Phone Number</SelectItem>
+                        <SelectItem value="sip">SIP URI</SelectItem>
+                        <SelectItem value="text">Text Transcript</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2 flex-1">
+                    <Label>Target Value</Label>
+                    {inputType === "text" ? (
+                      <Textarea 
+                        name="inputValue" 
+                        placeholder="Paste transcript here..." 
+                        required 
+                        className="min-h-[38px] max-h-[200px]" 
+                      />
+                    ) : (
+                      <Input 
+                        name="inputValue" 
+                        placeholder={inputType === "sip" ? "sip:user@domain.com" : "+1 (555) 000-0000"} 
+                        required 
+                      />
+                    )}
+                  </div>
                 </div>
-                <div className="space-y-2 flex-1">
-                  <Label>Target Value</Label>
-                  {inputType === "text" ? (
-                    <Textarea 
-                      name="inputValue" 
-                      placeholder="Paste transcript here..." 
-                      required 
-                      className="min-h-[38px] max-h-[200px]" 
+                
+                {inputType !== "text" && (
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="simulate" 
+                      checked={isSimulated} 
+                      onCheckedChange={(c) => setIsSimulated(c as boolean)} 
                     />
-                  ) : (
-                    <Input 
-                      name="inputValue" 
-                      placeholder={inputType === "sip" ? "sip:user@domain.com" : "+1 (555) 000-0000"} 
-                      required 
-                    />
-                  )}
-                </div>
-                <Button type="submit" disabled={isDiscovering || (job?.status === 'waiting_for_input')} className="mt-8">
+                    <div className="grid gap-1.5 leading-none">
+                      <Label htmlFor="simulate" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                        Simulate Interaction (Dev Mode)
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Use this if you haven't set up the local telephony backend yet.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <Button type="submit" disabled={isDiscovering || (job?.status === 'waiting_for_input')} className="mt-4">
                   {isDiscovering ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-                  {isDiscovering ? "Crawling..." : "Start Discovery"}
+                  {isDiscovering ? "Crawling..." : (isSimulated ? "Start Simulation" : "Start Discovery")}
                 </Button>
               </form>
             </CardContent>

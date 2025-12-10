@@ -503,6 +503,16 @@ export const runDiscovery = action({
         `Starting Graph-Based Discovery for ${entryPoint} (inputType=${inputType ?? "none"})...`
       );
 
+      // Check for common misconfiguration
+      if (inputType !== "simulated" && inputType !== "text") {
+        if (backendUrl && (backendUrl.includes("vly.site") || backendUrl.includes("convex.site"))) {
+           await log(
+             `WARNING: TELEPHONY_BACKEND_URL (${backendUrl}) appears to be pointing to the frontend/cloud environment, not your local telephony server. Real calls will likely fail with 404.`,
+             "warning"
+           );
+        }
+      }
+
       const visitedFingerprints = new Map<string, Id<"ivr_nodes">>();
       const maxDepth = 5;
 
