@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useMutation, useQuery, useAction } from "convex/react";
-import { Network, RefreshCw, Search, Server, ShieldCheck, Terminal, Activity, ChevronRight, ChevronDown, AlertTriangle, Play, Download, FileJson, FileText } from "lucide-react";
+import { Network, RefreshCw, Search, Server, ShieldCheck, Terminal, Activity, ChevronRight, ChevronDown, AlertTriangle, Play, Download, FileJson, FileText, Settings } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router";
 import { toast } from "sonner";
@@ -32,6 +32,8 @@ export default function Discovery() {
   const resumeJob = useMutation(api.discovery.resumeJob);
   const continueDiscovery = useAction(api.discovery.continueDiscovery);
   
+  const configStatus = useQuery(api.discovery.getConfigStatus);
+
   const [currentJobId, setCurrentJobId] = useState<Id<"discovery_jobs"> | null>(null);
   const job = useQuery(api.discovery.getJob, currentJobId ? { jobId: currentJobId } : "skip");
   const logs = useQuery(api.discovery.getLogs, currentJobId ? { jobId: currentJobId } : "skip");
@@ -130,6 +132,37 @@ export default function Discovery() {
 
   return (
     <div className="space-y-6">
+      {/* Configuration Warning Banner */}
+      {configStatus && !configStatus.isConfigured && !isSimulated && (
+        <div className="bg-destructive/15 border border-destructive/50 text-destructive px-4 py-3 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+          <AlertTriangle className="h-5 w-5 mt-0.5 shrink-0" />
+          <div>
+            <h4 className="font-semibold text-sm">Telephony Backend Not Configured</h4>
+            <p className="text-sm opacity-90 mt-1">
+              The <code>TELEPHONY_BACKEND_URL</code> environment variable is missing. Real phone calls will fail.
+            </p>
+            <div className="flex gap-2 mt-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-7 text-xs border-destructive/30 hover:bg-destructive/10"
+                onClick={() => setIsSimulated(true)}
+              >
+                Switch to Simulation Mode
+              </Button>
+              <a 
+                href="https://dashboard.convex.dev" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-7 px-3"
+              >
+                <Settings className="mr-1 h-3 w-3" /> Configure in Dashboard
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Card>
@@ -190,7 +223,11 @@ export default function Discovery() {
                   </div>
                 )}
 
-                <Button type="submit" disabled={isDiscovering || (job?.status === 'waiting_for_input')} className="mt-4">
+                <Button 
+                  type="submit" 
+                  disabled={isDiscovering || (job?.status === 'waiting_for_input') || (!isSimulated && configStatus && !configStatus.isConfigured)} 
+                  className="mt-4"
+                >
                   {isDiscovering ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
                   {isDiscovering ? "Crawling..." : (isSimulated ? "Start Simulation" : "Start Discovery")}
                 </Button>

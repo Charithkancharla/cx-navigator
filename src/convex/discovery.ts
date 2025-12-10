@@ -719,6 +719,17 @@ export const runDiscovery = action({
 
 // --- Queries --- //
 
+export const getConfigStatus = query({
+  args: {},
+  handler: async () => {
+    const url = process.env.TELEPHONY_BACKEND_URL;
+    return {
+      isConfigured: !!url && url.length > 0,
+      url: url ? `${url.substring(0, 8)}...` : undefined // Return partial URL for debug if needed, but keep secure
+    };
+  },
+});
+
 export const getJob = query({
   args: { jobId: v.id("discovery_jobs") },
   handler: async (ctx, args) => {
