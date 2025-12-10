@@ -1,0 +1,6 @@
+TWILIO_ACCOUNT_SID=your_sid
+TWILIO_AUTH_TOKEN=your_token
+TWILIO_FROM_NUMBER=your_twilio_number
+DEEPGRAM_API_KEY=your_deepgram_key
+# You will update this after starting ngrok
+WEBHOOK_BASE_URL=https://abc-123.ngrok-free.app
