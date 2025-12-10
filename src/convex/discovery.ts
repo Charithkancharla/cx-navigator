@@ -142,6 +142,11 @@ class RealTelephonySession implements TelephonySession {
       });
 
       if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error(
+            `Telephony backend returned 404 (Not Found). You might be pointing TELEPHONY_BACKEND_URL to the frontend instead of the backend server, or the /dial endpoint is missing. Check TELEPHONY_SETUP.md.`
+          );
+        }
         throw new Error(`Dial failed with status ${res.status}`);
       }
 

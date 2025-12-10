@@ -1,0 +1,3 @@
+{
+  "plan": "1. Instruct the user to follow TELEPHONY_SETUP.md to run the server and ngrok.\n2. Ask the user to update the TELEPHONY_BACKEND_URL with their ngrok URL once running."
+}
