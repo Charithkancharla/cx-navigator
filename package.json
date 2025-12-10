@@ -58,7 +58,6 @@
     "cmdk": "^1.1.1",
     "convex": "^1.30.0",
     "cors": "^2.8.5",
-    "crud": "link:convex-helpers/server/crud",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
     "embla-carousel-react": "^8.6.0",
