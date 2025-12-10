@@ -723,8 +723,10 @@ export const getConfigStatus = query({
   args: {},
   handler: async () => {
     const url = process.env.TELEPHONY_BACKEND_URL;
+    const isInvalid = url && (url.includes("convex.site") || url.includes("vly.site"));
     return {
-      isConfigured: !!url && url.length > 0,
+      isConfigured: !!url && url.length > 0 && !isInvalid,
+      isInvalid: !!isInvalid,
       url: url ? `${url.substring(0, 8)}...` : undefined // Return partial URL for debug if needed, but keep secure
     };
   },

@@ -133,13 +133,20 @@ export default function Discovery() {
   return (
     <div className="space-y-6">
       {/* Configuration Warning Banner */}
-      {configStatus && !configStatus.isConfigured && !isSimulated && (
+      {configStatus && (!configStatus.isConfigured || configStatus.isInvalid) && !isSimulated && (
         <div className="bg-destructive/15 border border-destructive/50 text-destructive px-4 py-3 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
           <AlertTriangle className="h-5 w-5 mt-0.5 shrink-0" />
           <div>
-            <h4 className="font-semibold text-sm">Telephony Backend Not Configured</h4>
+            <h4 className="font-semibold text-sm">
+              {configStatus.isInvalid 
+                ? "Invalid Telephony Configuration" 
+                : "Telephony Backend Not Configured"}
+            </h4>
             <p className="text-sm opacity-90 mt-1">
-              The <code>TELEPHONY_BACKEND_URL</code> environment variable is missing. Real phone calls will fail.
+              {configStatus.isInvalid 
+                ? <span>The <code>TELEPHONY_BACKEND_URL</code> is incorrectly pointing to this app. It must point to your <b>local ngrok URL</b> (e.g. <code>https://xyz.ngrok-free.app</code>).</span>
+                : <span>The <code>TELEPHONY_BACKEND_URL</code> environment variable is missing. Real phone calls will fail.</span>
+              }
             </p>
             <div className="flex gap-2 mt-2">
               <Button 
