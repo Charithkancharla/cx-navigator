@@ -505,11 +505,24 @@ export const runDiscovery = action({
 
       // Check for common misconfiguration
       if (inputType !== "simulated" && inputType !== "text") {
-        if (backendUrl && (backendUrl.includes("vly.site") || backendUrl.includes("convex.site"))) {
-           await log(
-             `WARNING: TELEPHONY_BACKEND_URL (${backendUrl}) appears to be pointing to the frontend/cloud environment, not your local telephony server. Real calls will likely fail with 404.`,
-             "warning"
-           );
+        if (!backendUrl) {
+           throw new Error("TELEPHONY_BACKEND_URL is missing. Please set it in the Convex Dashboard.");
+        }
+        
+        // STRICT CHECK: Prevent using the Convex URL as the Telephony Backend
+        if (backendUrl.includes("convex.site") || backendUrl.includes("vly.site")) {
+           const errorMsg = `INVALID CONFIGURATION: TELEPHONY_BACKEND_URL is set to '${backendUrl}'.\n` +
+             `This is your Convex Frontend/Backend URL, which CANNOT handle phone calls.\n` +
+             `\n` +
+             `TO FIX THIS:\n` +
+             `1. If you want to TEST without a server: Check 'Simulate Interaction' in the UI.\n` +
+             `2. If you want REAL CALLS: You must run the 'server.ts' file locally and use ngrok.\n` +
+             `   - Run: npm run start:server\n` +
+             `   - Run: ngrok http 3000\n` +
+             `   - Set TELEPHONY_BACKEND_URL to your ngrok URL (e.g. https://xyz.ngrok-free.app)`;
+           
+           await log(errorMsg, "error");
+           throw new Error(errorMsg);
         }
       }
 
