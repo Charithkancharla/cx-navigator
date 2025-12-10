@@ -1,1 +1,1 @@
-npx convex env set TELEPHONY_BACKEND_URL https://abc-123.ngrok-free.app
+npx convex env list
