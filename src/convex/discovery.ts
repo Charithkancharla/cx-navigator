@@ -492,8 +492,7 @@ export const runDiscovery = action({
     };
 
     try {
-      const actionEnv = (ctx as { env?: Record<string, string | undefined> }).env;
-      const backendUrl = actionEnv?.TELEPHONY_BACKEND_URL ?? process.env.TELEPHONY_BACKEND_URL;
+      const backendUrl = process.env.TELEPHONY_BACKEND_URL;
 
       await log(
         `Starting Graph-Based Discovery for ${entryPoint} (inputType=${inputType ?? "none"})...`
@@ -536,7 +535,7 @@ export const runDiscovery = action({
 
         metrics.maxDepthReached = Math.max(metrics.maxDepthReached, depth);
 
-        await log(`TELEPHONY_BACKEND_URL=${String(backendUrl)}`, "debug");
+        await log(`DEBUG: TELEPHONY_BACKEND_URL='${String(backendUrl)}'`, "debug");
         const session = createTelephonySession(entryPoint, inputType, backendUrl);
         await log(
           `Created session: ${
