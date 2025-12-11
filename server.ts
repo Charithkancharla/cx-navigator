@@ -5,7 +5,7 @@ import cors from "cors";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import Twilio from "twilio";
-import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
+import { createClient } from "@deepgram/sdk";
 
 dotenv.config();
 
@@ -13,227 +13,195 @@ const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
-const PORT = process.env.PORT || 3000;
-
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// State management (in-memory for demo)
-// Map<CallSid, { resolve: Function, transcript: string, isWaiting: boolean }>
-const calls = new Map();
+const PORT = process.env.PORT || 3000;
 
-// Twilio & Deepgram Setup
-// Note: These will be loaded from .env
-const twilioClient = Twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
-
-let deepgram: any;
-if (process.env.DEEPGRAM_API_KEY) {
-  deepgram = createClient(process.env.DEEPGRAM_API_KEY);
-}
-
-// Helper to get public URL
-const getBaseUrl = () => process.env.WEBHOOK_BASE_URL;
+// Store active calls
+const calls = new Map<string, any>();
 
 // Health check
 app.get("/health", (req, res) => {
-  res.json({ ok: true, provider: "twilio", status: "running" });
+  res.json({ status: "ok", env: { 
+    twilio: !!process.env.TWILIO_ACCOUNT_SID, 
+    deepgram: !!process.env.DEEPGRAM_API_KEY 
+  }});
 });
 
+// 1. Dial Endpoint
 app.post("/dial", async (req, res) => {
   try {
     const { endpoint } = req.body;
     if (!endpoint) {
-        res.status(400).json({ error: "Missing endpoint" });
-        return;
+      res.status(400).json({ error: "Missing endpoint" });
+      return;
     }
 
-    const baseUrl = getBaseUrl();
-    if (!baseUrl) {
-        res.status(500).json({ error: "WEBHOOK_BASE_URL not set in .env" });
-        return;
-    }
+    console.log(`[Dial] Initiating call to ${endpoint}...`);
 
-    console.log(`Dialing ${endpoint}...`);
+    const client = Twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
 
-    // Create a promise that will be resolved when we get the first transcript
-    let resolvePromise: any;
-    const transcriptPromise = new Promise((resolve) => {
-      resolvePromise = resolve;
-    });
-
-    const call = await twilioClient.calls.create({
-      url: `${baseUrl}/twiml/start`,
+    const call = await client.calls.create({
+      url: `${process.env.WEBHOOK_BASE_URL}/twiml/start`,
       to: endpoint,
-      from: process.env.TWILIO_PHONE_NUMBER,
+      from: process.env.TWILIO_PHONE_NUMBER!,
+      statusCallback: `${process.env.WEBHOOK_BASE_URL}/status-callback`,
+      statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
     });
 
-    console.log(`Call initiated: ${call.sid}`);
-
-    // Store call state
-    calls.set(call.sid, {
-      resolve: resolvePromise,
-      transcript: "",
-      isWaiting: true,
-      lastActivity: Date.now(),
-    });
-
-    // Wait for the welcome message (timeout after 30s)
-    const timeout = setTimeout(() => {
-      if (calls.has(call.sid)) {
-        const state = calls.get(call.sid);
-        if (state.isWaiting) {
-           console.log(`Timeout waiting for audio on ${call.sid}`);
-           state.resolve({ transcript: "(No audio detected)", confidence: 0 });
-           state.isWaiting = false;
-        }
-      }
-    }, 30000);
-
-    const result: any = await transcriptPromise;
-    clearTimeout(timeout);
-
-    res.json({
-      callId: call.sid,
-      transcript: result.transcript,
-      confidence: result.confidence || 0.8,
-      audioUrl: "", 
-      durationMs: 0,
-    });
-
+    calls.set(call.sid, { status: "initiated", transcript: [] });
+    res.json({ callId: call.sid, status: "initiated" });
   } catch (error: any) {
-    console.error("Dial error:", error);
+    console.error("[Dial] Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
+// 2. TwiML Start
+app.post("/twiml/start", (req, res) => {
+  const twiml = new Twilio.twiml.VoiceResponse();
+  const start = twiml.start();
+  start.stream({
+    url: `wss://${req.headers.host}/streams`,
+    track: "inbound_track",
+  });
+  twiml.pause({ length: 60 }); // Keep call open for 60s listening
+  
+  res.type("text/xml");
+  res.send(twiml.toString());
+});
+
+// 3. Send DTMF
 app.post("/send-dtmf", async (req, res) => {
   const { callId, digit } = req.body;
-  if (!calls.has(callId)) {
-      res.status(404).json({ error: "Call not found" });
-      return;
+  if (!callId || !digit) {
+    res.status(400).json({ error: "Missing callId or digit" });
+    return;
   }
 
-  const state = calls.get(callId);
-  
-  // Reset state for new transcript
-  let resolvePromise: any;
-  const transcriptPromise = new Promise((resolve) => {
-    resolvePromise = resolve;
-  });
-  
-  state.resolve = resolvePromise;
-  state.transcript = "";
-  state.isWaiting = true;
-
   try {
-    console.log(`Sending DTMF ${digit} to ${callId}`);
-    const baseUrl = getBaseUrl();
-    // We need to reconnect the stream after playing DTMF
-    // Note: We use a different stream URL path just to be explicit, but logic is same
-    await twilioClient.calls(callId).update({
-      twiml: `<Response><Play digits="${digit}"></Play><Connect><Stream url="wss://${baseUrl?.replace("https://", "")}/streams/dtmf" /></Connect></Response>`
+    const client = Twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
+
+    // Play DTMF tones on the active call
+    // Note: This plays to the callee.
+    await client.calls(callId).update({
+      twiml: `<Response><Play digits="${digit}"></Play><Pause length="10"/></Response>`
     });
 
-    // Wait for response
-    const result: any = await transcriptPromise;
+    // Wait a bit for the system to respond (simulated delay)
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Return the latest transcript
+    const callData = calls.get(callId);
+    const transcript = callData?.transcript.join(" ") || "";
     
-    res.json({
-      callId,
-      transcript: result.transcript,
-      confidence: result.confidence || 0.8,
+    res.json({ 
+      success: true, 
+      transcript,
+      confidence: 0.95,
+      durationMs: 2000
     });
   } catch (error: any) {
-    console.error("DTMF error:", error);
+    console.error("[DTMF] Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
+// 4. Hangup
 app.post("/hangup", async (req, res) => {
   const { callId } = req.body;
-  if (callId) {
-    try {
-      console.log(`Hanging up ${callId}`);
-      await twilioClient.calls(callId).update({ status: "completed" });
-      calls.delete(callId);
-    } catch (e) {
-      console.error("Hangup error", e);
-    }
+  if (!callId) {
+    res.status(400).json({ error: "Missing callId" });
+    return;
   }
-  res.json({ ok: true });
+
+  try {
+    const client = Twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
+
+    await client.calls(callId).update({ status: "completed" });
+    calls.delete(callId);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("[Hangup] Error:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.post("/twiml/start", (req, res) => {
-  const baseUrl = getBaseUrl()?.replace("https://", "");
-  const twiml = `
-    <Response>
-      <Connect>
-        <Stream url="wss://${baseUrl}/streams/initial" />
-      </Connect>
-    </Response>
-  `;
-  res.type("text/xml").send(twiml);
-});
-
-// WebSocket for Audio Stream
-wss.on("connection", (ws, req) => {
-  console.log("WS Connected");
+// WebSocket for Media Streams (Deepgram)
+wss.on("connection", (ws) => {
+  console.log("[WS] Client connected");
+  
   let deepgramLive: any;
   let callSid: string | null = null;
 
-  ws.on("message", (message) => {
-    const msg = JSON.parse(message.toString());
+  const setupDeepgram = () => {
+    const deepgram = createClient(process.env.DEEPGRAM_API_KEY!);
+    deepgramLive = deepgram.listen.live({
+      model: "nova-2",
+      language: "en-US",
+      smart_format: true,
+      encoding: "mulaw",
+      sample_rate: 8000,
+      channels: 1,
+    });
+
+    deepgramLive.on("Open", () => console.log("[Deepgram] Connection open"));
     
-    if (msg.event === "start") {
-      callSid = msg.start.callSid;
-      console.log(`Stream started for ${callSid}`);
-      
-      if (!deepgram) {
-          console.error("Deepgram not initialized");
-          return;
-      }
-
-      // Initialize Deepgram
-      deepgramLive = deepgram.listen.live({
-        model: "nova-2",
-        smart_format: true,
-        encoding: "mulaw",
-        sample_rate: 8000,
-        channels: 1,
-      });
-
-      deepgramLive.on(LiveTranscriptionEvents.Transcript, (data: any) => {
-        const transcript = data.channel?.alternatives?.[0]?.transcript;
-        if (transcript && transcript.trim().length > 0 && callSid && calls.has(callSid)) {
-          const state = calls.get(callSid);
-          if (state.isWaiting) {
-             console.log(`Transcript for ${callSid}: ${transcript}`);
-             // Simple logic: resolve on first meaningful transcript
-             // In production, you'd wait for silence or end of utterance
-             state.resolve({ transcript, confidence: data.channel.alternatives[0].confidence });
-             state.isWaiting = false;
-          }
+    deepgramLive.on("Results", (data: any) => {
+      const transcript = data.channel?.alternatives?.[0]?.transcript;
+      if (transcript && callSid) {
+        console.log(`[Transcript] ${callSid}: ${transcript}`);
+        const callData = calls.get(callSid);
+        if (callData) {
+          callData.transcript.push(transcript);
         }
-      });
-      
-      deepgramLive.on(LiveTranscriptionEvents.Error, (err: any) => {
-          console.error("Deepgram error:", err);
-      });
+      }
+    });
 
-    } else if (msg.event === "media" && deepgramLive && deepgramLive.getReadyState() === 1) {
-      const audio = Buffer.from(msg.media.payload, "base64");
-      deepgramLive.send(audio);
+    deepgramLive.on("Error", (e: any) => console.error("[Deepgram] Error:", e));
+    deepgramLive.on("Close", () => console.log("[Deepgram] Connection closed"));
+  };
+
+  setupDeepgram();
+
+  ws.on("message", (message: string) => {
+    try {
+      const data = JSON.parse(message);
+      
+      if (data.event === "start") {
+        callSid = data.start.callSid;
+        console.log(`[WS] Stream started for call ${callSid}`);
+      } else if (data.event === "media") {
+        if (deepgramLive && deepgramLive.getReadyState() === 1) {
+          const payload = Buffer.from(data.media.payload, "base64");
+          deepgramLive.send(payload);
+        }
+      } else if (data.event === "stop") {
+        console.log(`[WS] Stream stopped for call ${callSid}`);
+        if (deepgramLive) deepgramLive.finish();
+      }
+    } catch (e) {
+      console.error("[WS] Error processing message:", e);
     }
   });
 
   ws.on("close", () => {
+    console.log("[WS] Client disconnected");
     if (deepgramLive) deepgramLive.finish();
   });
 });
 
 server.listen(PORT, () => {
-  console.log(`Telephony backend listening on port ${PORT}`);
+  console.log(`Telephony Backend running on port ${PORT}`);
 });

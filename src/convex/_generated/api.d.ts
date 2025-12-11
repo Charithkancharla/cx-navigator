@@ -11,6 +11,7 @@
 import type * as auth from "../auth.js";
 import type * as auth_emailOtp from "../auth/emailOtp.js";
 import type * as discovery from "../discovery.js";
+import type * as discoveryActions from "../discoveryActions.js";
 import type * as execution from "../execution.js";
 import type * as http from "../http.js";
 import type * as projects from "../projects.js";
@@ -27,6 +28,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   "auth/emailOtp": typeof auth_emailOtp;
   discovery: typeof discovery;
+  discoveryActions: typeof discoveryActions;
   execution: typeof execution;
   http: typeof http;
   projects: typeof projects;

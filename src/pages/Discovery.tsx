@@ -28,9 +28,9 @@ export default function Discovery() {
   );
   
   const createJob = useMutation(api.discovery.createJob);
-  const runDiscovery = useAction(api.discovery.runDiscovery);
+  const runDiscovery = useAction(api.discoveryActions.runDiscovery);
   const resumeJob = useMutation(api.discovery.resumeJob);
-  const continueDiscovery = useAction(api.discovery.continueDiscovery);
+  const continueDiscovery = useAction(api.discoveryActions.continueDiscovery);
   
   const configStatus = useQuery(api.discovery.getConfigStatus);
 
