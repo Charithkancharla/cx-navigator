@@ -1,1 +1,1 @@
-npx convex env list
+curl -v https://b3a4-12-188-75-11.ngrok-free.app/health
